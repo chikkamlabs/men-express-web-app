@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS public.categories (
     description TEXT,
     status BOOLEAN NOT NULL DEFAULT true,
     image TEXT,
+    image_url TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -123,6 +124,7 @@ CREATE TABLE IF NOT EXISTS public.products (
     collar TEXT,
     fabric TEXT,
     status BOOLEAN NOT NULL DEFAULT true,
+    landing_page BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -153,6 +155,7 @@ CREATE TABLE IF NOT EXISTS public.product_colors (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     product_id UUID NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
     color_id UUID NOT NULL REFERENCES public.colors(id) ON DELETE RESTRICT,
+    front_image UUID NULL,
     status BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -167,8 +170,20 @@ CREATE TABLE IF NOT EXISTS public.product_color_images (
     product_id UUID NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
     product_color_id UUID NOT NULL REFERENCES public.product_colors(id) ON DELETE CASCADE,
     image_url TEXT NOT NULL,
+    display_order INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+DO $$ BEGIN
+    ALTER TABLE public.product_colors
+    ADD CONSTRAINT product_colors_front_image_fkey
+    FOREIGN KEY (front_image)
+    REFERENCES public.product_color_images (id)
+    ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+CREATE INDEX IF NOT EXISTS idx_product_color_images_order
+ON public.product_color_images (product_color_id, display_order);
 
 -- ------------------------------------------------------------------------------
 -- 9. PRODUCT_VARIANTS (Sellable SKUs with Barcode, Pricing, Central Stock)
@@ -261,7 +276,7 @@ CREATE TABLE IF NOT EXISTS public.staff (
     mobile VARCHAR(15),
     email TEXT,
     salary NUMERIC(12,2) NOT NULL DEFAULT 0.00 CHECK (salary >= 0),
-    store_id UUID NOT NULL REFERENCES public.stores(id) ON DELETE RESTRICT,
+    store_id UUID NULL REFERENCES public.stores(id) ON DELETE RESTRICT,
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'deactive')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -1570,42 +1585,102 @@ CREATE POLICY "admin_manage_staff_salaries" ON public.staff_salaries
 -- ------------------------------------------------------------------------------
 -- 12. CUSTOMERS & CUSTOMER ADDRESSES
 -- ------------------------------------------------------------------------------
+DROP POLICY IF EXISTS "admin_manage_customers" ON public.customers;
 CREATE POLICY "admin_manage_customers" ON public.customers
     FOR ALL TO authenticated
     USING (public.is_admin())
     WITH CHECK (public.is_admin());
 
--- Store users can read, create, and update customers for in-store billing
+DROP POLICY IF EXISTS "store_access_customers_for_pos" ON public.customers;
 CREATE POLICY "store_access_customers_for_pos" ON public.customers
     FOR SELECT TO authenticated
     USING (public.get_user_store_id() IS NOT NULL);
 
+DROP POLICY IF EXISTS "store_insert_customers_for_pos" ON public.customers;
 CREATE POLICY "store_insert_customers_for_pos" ON public.customers
     FOR INSERT TO authenticated
     WITH CHECK (public.get_user_store_id() IS NOT NULL);
 
+DROP POLICY IF EXISTS "store_update_customers_for_pos" ON public.customers;
 CREATE POLICY "store_update_customers_for_pos" ON public.customers
     FOR UPDATE TO authenticated
     USING (public.get_user_store_id() IS NOT NULL)
     WITH CHECK (public.get_user_store_id() IS NOT NULL);
 
+-- Public / Web Store Customer Policies (Search, register & update during checkout)
+DROP POLICY IF EXISTS "public_select_customers" ON public.customers;
+CREATE POLICY "public_select_customers" ON public.customers
+    FOR SELECT TO public
+    USING (true);
+
+DROP POLICY IF EXISTS "public_insert_customers" ON public.customers;
+CREATE POLICY "public_insert_customers" ON public.customers
+    FOR INSERT TO public
+    WITH CHECK (true);
+
+DROP POLICY IF EXISTS "public_update_customers" ON public.customers;
+CREATE POLICY "public_update_customers" ON public.customers
+    FOR UPDATE TO public
+    USING (true)
+    WITH CHECK (true);
+
+-- Customer Addresses
+DROP POLICY IF EXISTS "admin_manage_customer_address" ON public.customer_address;
 CREATE POLICY "admin_manage_customer_address" ON public.customer_address
     FOR ALL TO authenticated
     USING (public.is_admin())
     WITH CHECK (public.is_admin());
 
+DROP POLICY IF EXISTS "public_select_customer_address" ON public.customer_address;
+CREATE POLICY "public_select_customer_address" ON public.customer_address
+    FOR SELECT TO public
+    USING (true);
+
+DROP POLICY IF EXISTS "public_insert_customer_address" ON public.customer_address;
+CREATE POLICY "public_insert_customer_address" ON public.customer_address
+    FOR INSERT TO public
+    WITH CHECK (true);
+
+DROP POLICY IF EXISTS "public_update_customer_address" ON public.customer_address;
+CREATE POLICY "public_update_customer_address" ON public.customer_address
+    FOR UPDATE TO public
+    USING (true)
+    WITH CHECK (true);
+
 -- ------------------------------------------------------------------------------
--- 13. ONLINE ORDERS & ITEMS (Admin Manage Only; Customer via Security Definer RPC)
+-- 13. ONLINE ORDERS & ITEMS
 -- ------------------------------------------------------------------------------
+DROP POLICY IF EXISTS "admin_manage_online_orders" ON public.online_orders;
 CREATE POLICY "admin_manage_online_orders" ON public.online_orders
     FOR ALL TO authenticated
     USING (public.is_admin())
     WITH CHECK (public.is_admin());
 
+DROP POLICY IF EXISTS "public_insert_online_orders" ON public.online_orders;
+CREATE POLICY "public_insert_online_orders" ON public.online_orders
+    FOR INSERT TO public
+    WITH CHECK (true);
+
+DROP POLICY IF EXISTS "public_select_online_orders" ON public.online_orders;
+CREATE POLICY "public_select_online_orders" ON public.online_orders
+    FOR SELECT TO public
+    USING (true);
+
+DROP POLICY IF EXISTS "admin_manage_order_items" ON public.order_items;
 CREATE POLICY "admin_manage_order_items" ON public.order_items
     FOR ALL TO authenticated
     USING (public.is_admin())
     WITH CHECK (public.is_admin());
+
+DROP POLICY IF EXISTS "public_insert_order_items" ON public.order_items;
+CREATE POLICY "public_insert_order_items" ON public.order_items
+    FOR INSERT TO public
+    WITH CHECK (true);
+
+DROP POLICY IF EXISTS "public_select_order_items" ON public.order_items;
+CREATE POLICY "public_select_order_items" ON public.order_items
+    FOR SELECT TO public
+    USING (true);
 
 -- ------------------------------------------------------------------------------
 -- 14. STORE BILLS, BILL ITEMS, BILL PAYMENTS (Store-Isolated Access)
@@ -1776,3 +1851,126 @@ SELECT
 FROM public.staff;
 
 GRANT SELECT ON public.store_staff_view TO authenticated;
+
+-- ==============================================================================
+-- PART 10: SUPABASE STORAGE BUCKETS & RLS POLICIES
+-- ==============================================================================
+
+-- 1. Create product_color_images_bucket bucket if it does not exist
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('product_color_images_bucket', 'product_color_images_bucket', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+-- 2. Clean up existing policies for product_color_images_bucket to prevent duplicates
+DROP POLICY IF EXISTS "Allow public read from product_color_images_bucket" ON storage.objects;
+DROP POLICY IF EXISTS "Allow authenticated insert to product_color_images_bucket" ON storage.objects;
+DROP POLICY IF EXISTS "Allow authenticated update to product_color_images_bucket" ON storage.objects;
+DROP POLICY IF EXISTS "Allow authenticated delete from product_color_images_bucket" ON storage.objects;
+DROP POLICY IF EXISTS "Allow anon upload to product_color_images_bucket" ON storage.objects;
+DROP POLICY IF EXISTS "Allow anon update to product_color_images_bucket" ON storage.objects;
+DROP POLICY IF EXISTS "Allow anon delete from product_color_images_bucket" ON storage.objects;
+
+-- 3. Storage Policies for storage.objects on product_color_images_bucket
+
+-- Allow public read access to product images
+CREATE POLICY "Allow public read from product_color_images_bucket"
+ON storage.objects FOR SELECT
+TO public
+USING (bucket_id = 'product_color_images_bucket');
+
+-- Allow authenticated users to upload images
+CREATE POLICY "Allow authenticated insert to product_color_images_bucket"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (bucket_id = 'product_color_images_bucket');
+
+-- Allow authenticated users to update images
+CREATE POLICY "Allow authenticated update to product_color_images_bucket"
+ON storage.objects FOR UPDATE
+TO authenticated
+USING (bucket_id = 'product_color_images_bucket')
+WITH CHECK (bucket_id = 'product_color_images_bucket');
+
+-- Allow authenticated users to delete images
+CREATE POLICY "Allow authenticated delete from product_color_images_bucket"
+ON storage.objects FOR DELETE
+TO authenticated
+USING (bucket_id = 'product_color_images_bucket');
+
+-- Allow anon upload/delete for dev/client-side access
+CREATE POLICY "Allow anon upload to product_color_images_bucket"
+ON storage.objects FOR INSERT
+TO anon
+WITH CHECK (bucket_id = 'product_color_images_bucket');
+
+CREATE POLICY "Allow anon update to product_color_images_bucket"
+ON storage.objects FOR UPDATE
+TO anon
+USING (bucket_id = 'product_color_images_bucket')
+WITH CHECK (bucket_id = 'product_color_images_bucket');
+
+CREATE POLICY "Allow anon delete from product_color_images_bucket"
+ON storage.objects FOR DELETE
+TO anon
+USING (bucket_id = 'product_color_images_bucket');
+
+-- ------------------------------------------------------------------------------
+-- 2. Create category_images_bucket bucket if it does not exist
+-- ------------------------------------------------------------------------------
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('category_images_bucket', 'category_images_bucket', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+-- Clean up existing policies for category_images_bucket to prevent duplicates
+DROP POLICY IF EXISTS "Allow public read from category_images_bucket" ON storage.objects;
+DROP POLICY IF EXISTS "Allow authenticated insert to category_images_bucket" ON storage.objects;
+DROP POLICY IF EXISTS "Allow authenticated update to category_images_bucket" ON storage.objects;
+DROP POLICY IF EXISTS "Allow authenticated delete from category_images_bucket" ON storage.objects;
+DROP POLICY IF EXISTS "Allow anon upload to category_images_bucket" ON storage.objects;
+DROP POLICY IF EXISTS "Allow anon update to category_images_bucket" ON storage.objects;
+DROP POLICY IF EXISTS "Allow anon delete from category_images_bucket" ON storage.objects;
+
+-- Storage Policies for storage.objects on category_images_bucket
+
+-- Allow public read access to category images
+CREATE POLICY "Allow public read from category_images_bucket"
+ON storage.objects FOR SELECT
+TO public
+USING (bucket_id = 'category_images_bucket');
+
+-- Allow authenticated users to upload category images
+CREATE POLICY "Allow authenticated insert to category_images_bucket"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (bucket_id = 'category_images_bucket');
+
+-- Allow authenticated users to update category images
+CREATE POLICY "Allow authenticated update to category_images_bucket"
+ON storage.objects FOR UPDATE
+TO authenticated
+USING (bucket_id = 'category_images_bucket')
+WITH CHECK (bucket_id = 'category_images_bucket');
+
+-- Allow authenticated users to delete category images
+CREATE POLICY "Allow authenticated delete from category_images_bucket"
+ON storage.objects FOR DELETE
+TO authenticated
+USING (bucket_id = 'category_images_bucket');
+
+-- Allow anon upload/update/delete for dev/client-side access
+CREATE POLICY "Allow anon upload to category_images_bucket"
+ON storage.objects FOR INSERT
+TO anon
+WITH CHECK (bucket_id = 'category_images_bucket');
+
+CREATE POLICY "Allow anon update to category_images_bucket"
+ON storage.objects FOR UPDATE
+TO anon
+USING (bucket_id = 'category_images_bucket')
+WITH CHECK (bucket_id = 'category_images_bucket');
+
+CREATE POLICY "Allow anon delete from category_images_bucket"
+ON storage.objects FOR DELETE
+TO anon
+USING (bucket_id = 'category_images_bucket');
+
