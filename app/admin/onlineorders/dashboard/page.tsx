@@ -22,10 +22,10 @@ import {
   getOnlineOrders,
 } from '@/lib/onlineordersStore';
 
-function getTodayString(): string {
-  const d = new Date();
-  return d.toISOString().split('T')[0];
-}
+// function getTodayString(): string {
+//   const d = new Date();
+//   return d.toISOString().split('T')[0];
+// }
 
 export default function AdminOnlineOrdersDashboardPage() {
   const router = useRouter();
@@ -38,12 +38,28 @@ export default function AdminOnlineOrdersDashboardPage() {
   const [dataLoading, setDataLoading] = useState(true);
 
   // Filters state (default Dates: from and to default today)
-  const todayStr = useMemo(() => getTodayString(), []);
-  const [fromDate, setFromDate] = useState<string>(todayStr);
-  const [toDate, setToDate] = useState<string>(todayStr);
+  const [todayStr, setTodayStr] = useState<string>('');
+  const [fromDate, setFromDate] = useState<string>('');
+  const [toDate, setToDate] = useState<string>('');
   const [filterPayment, setFilterPayment] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [searchOrderId, setSearchOrderId] = useState<string>('');
+
+
+  // Set today's date after component mounts
+useEffect(() => {
+  const now = new Date();
+
+  const today = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+  ].join('-');
+
+  setTodayStr(today);
+  setFromDate(today);
+  setToDate(today);
+}, []);
 
   // Authentication check
   useEffect(() => {
