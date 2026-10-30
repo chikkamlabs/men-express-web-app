@@ -386,16 +386,84 @@ function ProductColorsContent() {
   };
 
   // Change display order for an image
-  const handleOrderChange = (colorId: string, imageId: string, newOrder: number) => {
-    setSelectedOrdersByColor((prev) => ({
-      ...prev,
-      [colorId]: {
-        ...(prev[colorId] || {}),
-        [imageId]: newOrder,
-      },
-    }));
-  };
+  // Change display order and automatically shift other images
+const handleOrderChange = (
+  colorId: string,
+  imageId: string,
+  newOrder: number
+) => {
+  setSelectedOrdersByColor((prev) => {
+    const currentOrders = { ...(prev[colorId] || {}) };
+    const images = loadedImagesByColor[colorId] || [];
 
+    const oldOrder = currentOrders[imageId];
+
+    if (oldOrder === undefined || oldOrder === newOrder) {
+      return prev;
+    }
+
+    // Move other images to make room
+    images.forEach((img) => {
+      if (img.id === imageId) return;
+
+      const order = currentOrders[img.id];
+
+      if (order === undefined) return;
+
+      if (newOrder < oldOrder) {
+        // Moving image forward: shift intervening images down
+        if (order >= newOrder && order < oldOrder) {
+          currentOrders[img.id] = order + 1;
+        }
+      } else {
+        // Moving image backward: shift intervening images up
+        if (order > oldOrder && order <= newOrder) {
+          currentOrders[img.id] = order - 1;
+        }
+      }
+    });
+
+    currentOrders[imageId] = newOrder;
+
+    return {
+      ...prev,
+      [colorId]: currentOrders,
+    };
+  });
+
+  // Immediately rearrange images in the UI
+  setLoadedImagesByColor((prev) => {
+    const images = [...(prev[colorId] || [])];
+
+    const currentOrders = {
+      ...(selectedOrdersByColor[colorId] || {}),
+    };
+
+    // Apply the new order to the local sorting map
+    const oldOrder = currentOrders[imageId];
+
+    if (oldOrder === undefined) return prev;
+
+    images.sort((a, b) => {
+      const orderA =
+        a.id === imageId
+          ? newOrder
+          : currentOrders[a.id] ?? a.display_order ?? 999;
+
+      const orderB =
+        b.id === imageId
+          ? newOrder
+          : currentOrders[b.id] ?? b.display_order ?? 999;
+
+      return orderA - orderB;
+    });
+
+    return {
+      ...prev,
+      [colorId]: images,
+    };
+  });
+};
   // Tap "Done" to save display order and set display_order = 1 as front_image
   const handleSaveDisplayOrder = async (colorId: string) => {
     const images = loadedImagesByColor[colorId] || [];
@@ -853,7 +921,21 @@ function ProductColorsContent() {
                                     </div>
                                   ) : (
                                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
-                                      {colorImages.map((img, idx) => {
+                                      {[...colorImages]
+                                          .sort((a, b) => {
+                                            const orderA =
+                                              selectedOrdersByColor[pc.id]?.[a.id] ??
+                                              a.display_order ??
+                                              999;
+
+                                            const orderB =
+                                              selectedOrdersByColor[pc.id]?.[b.id] ??
+                                              b.display_order ??
+                                              999;
+
+                                            return orderA - orderB;
+                                          })
+                                          .map((img, idx) => {
                                         const totalCount = colorImages.length;
                                         const currentOrder =
                                           selectedOrdersByColor[pc.id]?.[img.id] ??
