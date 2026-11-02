@@ -2,13 +2,17 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getCurrentSupabaseUser, signOutSupabase } from '@/lib/auth';
+import { getCurrentSupabaseUser } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
+import StoreHeader from '@/components/store/header';
+import StoreSidebar from '@/components/store/sidebar';
 
 export default function StoreDashboardPage() {
   const router = useRouter();
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [storeName, setStoreName] = useState('Store');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -20,6 +24,30 @@ export default function StoreDashboardPage() {
 
         if (user && (role === 'store' || role === 'admin')) {
           setIsAuthorized(true);
+          
+          // Resolve store name
+          let resolvedName = user.user_metadata?.name || '';
+          if (!resolvedName) {
+            try {
+              const { data } = await supabase
+                .from('stores')
+                .select('name')
+                .eq('id', user.id)
+                .maybeSingle();
+              if (data?.name) {
+                resolvedName = data.name;
+              }
+            } catch {
+              // Ignore lookup errors
+            }
+          }
+          if (!resolvedName && user.email) {
+            resolvedName = user.email.split('@')[0];
+          }
+          if (resolvedName) {
+            setStoreName(resolvedName);
+          }
+
           setLoading(false);
         } else {
           router.replace('/login');
@@ -56,10 +84,29 @@ export default function StoreDashboardPage() {
     };
   }, [router]);
 
-  const handleLogout = async () => {
-    await signOutSupabase();
-    router.replace('/login');
-  };
+  const addBillBtnRef = React.useRef<HTMLAnchorElement | HTMLButtonElement>(null);
+
+  // Keyboard shortcut: if on store/dashboard and user presses Enter, focus on Add Bill button and navigate
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Enter') {
+        const activeTag = document.activeElement?.tagName?.toLowerCase();
+        if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') {
+          return;
+        }
+        e.preventDefault();
+        if (addBillBtnRef.current) {
+          addBillBtnRef.current.focus();
+        }
+        router.push('/store/createbill');
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [router]);
 
   if (loading) {
     return (
@@ -74,26 +121,50 @@ export default function StoreDashboardPage() {
   }
 
   return (
-    <div className="layout-page-container anim-page-enter">
-      <header className="ui-header">
-        <div className="ui-header-inner">
-          <div className="ui-header-brand">
-            <span>Store</span>
+    <div className="min-h-screen flex flex-col bg-white anim-page-enter relative">
+      {/* On top Header covers everything across top */}
+      <StoreHeader
+        storeName={storeName}
+        isSidebarOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
+      />
+
+      {/* After the Header the sidebar starts */}
+      <div className="flex flex-1 relative min-h-[calc(100vh-4rem)]">
+        <StoreSidebar
+          mobileOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+        />
+
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 bg-zinc-50 overflow-y-auto relative pb-24">
+          <div className="max-w-7xl mx-auto">
+            <h1 className="typo-page-title mb-2">Store Dashboard</h1>
+            <p className="typo-body text-zinc-600">
+              Welcome to the Men Express Store Portal.
+            </p>
           </div>
-          <div className="ui-header-actions">
+
+          {/* Add Bill Button on bottom right (Tapping Enter on keyboard focuses and opens) */}
+          <div className="fixed bottom-6 right-6 sm:bottom-8 sm:right-8 z-30">
             <button
-              onClick={handleLogout}
-              className="ui-btn ui-btn-outline ui-btn-sm"
+              ref={addBillBtnRef as any}
+              type="button"
+              onClick={() => router.push('/store/createbill')}
+              className="ui-btn ui-btn-primary ui-btn-lg px-5 py-3 shadow-xl hover:shadow-2xl flex items-center gap-2.5 font-bold text-sm sm:text-base rounded-xl cursor-pointer border-2 border-black transition-all transform hover:-translate-y-0.5 active:translate-y-0"
+              aria-label="Add Bill"
             >
-              Logout
+              <span className="w-5 h-5 rounded-full bg-white text-black flex items-center justify-center font-black text-xs">
+                +
+              </span>
+              <span>Add Bill</span>
+              <span className="text-[10px] opacity-75 font-mono ml-1 px-1.5 py-0.5 bg-zinc-800 rounded border border-zinc-700 hidden sm:inline-block">
+                Enter ↵
+              </span>
             </button>
           </div>
-        </div>
-      </header>
-
-      <main className="layout-content-wrapper layout-flex-center">
-        <h1 className="typo-page-title">Welcome Store</h1>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }
+

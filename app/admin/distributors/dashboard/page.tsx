@@ -2,7 +2,8 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Plus, Truck, RefreshCw } from 'lucide-react';
+import Link from 'next/link';
+import { Search, Plus, Truck, RefreshCw, Receipt } from 'lucide-react';
 import { getCurrentSupabaseUser } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import AdminHeader from '@/components/admin/header';
@@ -329,15 +330,30 @@ export default function AdminDistributorsDashboardPage() {
                           )}
                         </td>
 
-                        {/* Open Button: Grey color, turns dark black on tap */}
+                        {/* Action: Transactions and Open buttons */}
                         <td className="py-3 px-4 text-sm text-right whitespace-nowrap">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedDistributor(distributor)}
-                            className="ui-btn ui-btn-grey ui-btn-sm px-3 py-1 font-medium text-xs cursor-pointer inline-flex items-center gap-1.5"
-                          >
-                            <span>Open</span>
-                          </button>
+                          <div className="flex items-center justify-end gap-2">
+                            <Link
+                              href={`/admin/distributors/transactions?id=${encodeURIComponent(
+                                distributor.id
+                              )}&distributor_id=${encodeURIComponent(
+                                distributor.distributor_id
+                              )}`}
+                              className="ui-btn ui-btn-outline ui-btn-sm px-2.5 py-1 font-medium text-xs cursor-pointer inline-flex items-center gap-1.5 border border-zinc-300 hover:border-black hover:bg-black hover:text-white transition-colors rounded"
+                              title="View and manage ledger transactions"
+                            >
+                              <Receipt className="w-3.5 h-3.5" />
+                              <span>Transactions</span>
+                            </Link>
+
+                            <button
+                              type="button"
+                              onClick={() => setSelectedDistributor(distributor)}
+                              className="ui-btn ui-btn-grey ui-btn-sm px-3 py-1 font-medium text-xs cursor-pointer inline-flex items-center gap-1.5"
+                            >
+                              <span>Open</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))

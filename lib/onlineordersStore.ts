@@ -38,6 +38,24 @@ export interface OrderItem {
   color?: string;
 }
 
+export type PaymentGatewayStatus = 'pending' | 'completed' | 'cancelled';
+
+export interface OrderPaymentRecord {
+  id: string;
+  order_id: string;
+  payment_gateway: string;
+  cf_order_id: string | null;
+  cf_payment_id: string | null;
+  payment_session_id: string | null;
+  transaction_id: string | null;
+  amount: number;
+  currency: string;
+  status: PaymentGatewayStatus;
+  paid_at: string | null;
+  created_at: string;
+  updated_at?: string;
+}
+
 export interface OnlineOrder {
   id: string;
   order_id: string;
@@ -58,6 +76,7 @@ export interface OnlineOrder {
   customer_email?: string | null;
   customer_address?: CustomerAddress | null;
   items?: OrderItem[];
+  order_payments?: OrderPaymentRecord[];
 }
 
 export interface UpdateOrderStatusInput {
@@ -204,6 +223,32 @@ export async function getOnlineOrderDetails(
       }));
     }
 
+    // Fetch order payments
+    let orderPayments: OrderPaymentRecord[] = [];
+    const { data: paymentsData, error: paymentsError } = await supabase
+      .from('order_payments')
+      .select('*')
+      .eq('order_id', order.id)
+      .order('created_at', { ascending: false });
+
+    if (!paymentsError && paymentsData) {
+      orderPayments = paymentsData.map((p: any) => ({
+        id: p.id,
+        order_id: p.order_id,
+        payment_gateway: p.payment_gateway || 'cashfree',
+        cf_order_id: p.cf_order_id || null,
+        cf_payment_id: p.cf_payment_id || null,
+        payment_session_id: p.payment_session_id || null,
+        transaction_id: p.transaction_id || null,
+        amount: Number(p.amount) || 0,
+        currency: p.currency || 'INR',
+        status: p.status || 'pending',
+        paid_at: p.paid_at || null,
+        created_at: p.created_at,
+        updated_at: p.updated_at,
+      }));
+    }
+
     const completeOrder: OnlineOrder = {
       id: order.id,
       order_id: order.order_id,
@@ -224,6 +269,7 @@ export async function getOnlineOrderDetails(
       customer_email: order.customer?.email || null,
       customer_address: address,
       items,
+      order_payments: orderPayments,
     };
 
     return { data: completeOrder, error: null };

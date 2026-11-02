@@ -524,6 +524,141 @@ function OpenOrderContent() {
                   </div>
                 </div>
 
+                {/* Section: Order Payment Details */}
+                <div className="ui-card p-6 bg-white border border-zinc-200 rounded-lg space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-3 border-b border-zinc-200">
+                    <div className="flex items-center gap-2">
+                      <CreditCard className="w-4 h-4 text-black" />
+                      <h2 className="text-sm font-bold text-black uppercase tracking-wide">
+                        Order Payment Details
+                      </h2>
+                    </div>
+                    <span className="text-xs text-zinc-500">
+                      Gateway transactions linked to this order
+                    </span>
+                  </div>
+
+                  {!order.order_payments || order.order_payments.length === 0 ? (
+                    <div className="py-6 text-center rounded-md bg-zinc-50 border border-dashed border-zinc-200">
+                      <CreditCard className="w-8 h-8 text-zinc-400 mx-auto mb-2 opacity-60" />
+                      <p className="text-xs text-zinc-600 font-medium">
+                        No online payment gateway transactions recorded for this order.
+                      </p>
+                      <p className="text-[11px] text-zinc-400 mt-0.5">
+                        Payments initiated via Cashfree or other online gateways will appear here.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-zinc-200 bg-zinc-50">
+                            <th className="py-2.5 px-3 font-semibold text-xs text-zinc-600 uppercase">
+                              Gateway & Status
+                            </th>
+                            <th className="py-2.5 px-3 font-semibold text-xs text-zinc-600 uppercase text-right">
+                              Amount
+                            </th>
+                            <th className="py-2.5 px-3 font-semibold text-xs text-zinc-600 uppercase">
+                              CF Order ID / Payment ID
+                            </th>
+                            <th className="py-2.5 px-3 font-semibold text-xs text-zinc-600 uppercase">
+                              Transaction / Session ID
+                            </th>
+                            <th className="py-2.5 px-3 font-semibold text-xs text-zinc-600 uppercase text-right">
+                              Date & Time
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-200">
+                          {order.order_payments.map((p, pIdx) => {
+                            const statusColor =
+                              p.status === 'completed'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : p.status === 'cancelled'
+                                ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                : 'bg-amber-50 text-amber-700 border-amber-200';
+
+                            return (
+                              <tr key={p.id || pIdx} className="hover:bg-zinc-50/80">
+                                <td className="py-3 px-3 align-top">
+                                  <div className="space-y-1">
+                                    <span className="inline-block text-xs font-bold text-black uppercase tracking-wider">
+                                      {p.payment_gateway || 'Cashfree'}
+                                    </span>
+                                    <div>
+                                      <span
+                                        className={`inline-block px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider rounded border ${statusColor}`}
+                                      >
+                                        {p.status}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="py-3 px-3 align-top text-right font-mono font-bold text-sm text-black">
+                                  {p.currency === 'INR' || !p.currency ? '₹' : `${p.currency} `}
+                                  {Number(p.amount || 0).toLocaleString('en-IN', {
+                                    minimumFractionDigits: 2,
+                                  })}
+                                </td>
+                                <td className="py-3 px-3 align-top text-xs font-mono space-y-1">
+                                  <div>
+                                    <span className="text-[10px] text-zinc-400 block uppercase">CF Order ID:</span>
+                                    <span className="text-zinc-800 select-all">{p.cf_order_id || '—'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-[10px] text-zinc-400 block uppercase">CF Payment ID:</span>
+                                    <span className="text-zinc-800 select-all">{p.cf_payment_id || '—'}</span>
+                                  </div>
+                                </td>
+                                <td className="py-3 px-3 align-top text-xs font-mono space-y-1">
+                                  <div>
+                                    <span className="text-[10px] text-zinc-400 block uppercase">Txn ID:</span>
+                                    <span className="text-zinc-800 select-all">{p.transaction_id || '—'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-[10px] text-zinc-400 block uppercase">Session ID:</span>
+                                    <span
+                                      className="text-zinc-600 truncate max-w-[200px] block select-all"
+                                      title={p.payment_session_id || ''}
+                                    >
+                                      {p.payment_session_id || '—'}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="py-3 px-3 align-top text-right text-xs text-zinc-600 font-mono space-y-1">
+                                  <div>
+                                    <span className="text-[10px] text-zinc-400 block uppercase">Created:</span>
+                                    <span>
+                                      {p.created_at
+                                        ? new Date(p.created_at).toLocaleString('en-IN', {
+                                            dateStyle: 'medium',
+                                            timeStyle: 'short',
+                                          })
+                                        : '—'}
+                                    </span>
+                                  </div>
+                                  {p.paid_at && (
+                                    <div>
+                                      <span className="text-[10px] text-emerald-600 block uppercase">Paid:</span>
+                                      <span className="text-emerald-700">
+                                        {new Date(p.paid_at).toLocaleString('en-IN', {
+                                          dateStyle: 'medium',
+                                          timeStyle: 'short',
+                                        })}
+                                      </span>
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
                 {/* Section 4: Change Payment Status & Fulfillment Status */}
                 <form
                   onSubmit={handleStatusUpdate}
