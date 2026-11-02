@@ -15,6 +15,7 @@ import {
   Users,
   UserCheck,
   Settings,
+  Ticket,
   X,
 } from 'lucide-react';
 
@@ -31,13 +32,14 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { name: 'Home', href: '/admin/dashboard', icon: Home },
-  { name: 'Stores', href: '/admin/dashboard', icon: Store },
+  { name: 'Stores', href: '/admin/stores', icon: Store },
   { name: 'Products', href: '/admin/products', icon: Shirt },
   { name: 'Categories', href: '/admin/categories', icon: FolderTree },
-  { name: 'Inventory', href: '/admin/dashboard', icon: Package },
+  { name: 'Store Distribution', href: '/admin/storedistributions', icon: Package },
   { name: 'Online orders', href: '/admin/onlineorders', icon: ShoppingBag },
+  { name: 'Coupons', href: '/admin/coupons', icon: Ticket },
   { name: 'Distributors', href: '/admin/distributors', icon: Truck },
-  { name: 'Purchases', href: '/admin/dashboard', icon: ShoppingCart },
+  { name: 'Purchases', href: '/admin/purchases', icon: ShoppingCart },
   { name: 'Customers', href: '/admin/customers', icon: Users },
   { name: 'Staffs', href: '/admin/staff', icon: UserCheck },
 ];

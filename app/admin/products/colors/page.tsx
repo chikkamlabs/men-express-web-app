@@ -464,6 +464,7 @@ const handleOrderChange = (
     };
   });
 };
+
   // Tap "Done" to save display order and set display_order = 1 as front_image
   const handleSaveDisplayOrder = async (colorId: string) => {
     const images = loadedImagesByColor[colorId] || [];
@@ -922,20 +923,20 @@ const handleOrderChange = (
                                   ) : (
                                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
                                       {[...colorImages]
-                                          .sort((a, b) => {
-                                            const orderA =
-                                              selectedOrdersByColor[pc.id]?.[a.id] ??
-                                              a.display_order ??
-                                              999;
+                                        .sort((a, b) => {
+                                          const orderA =
+                                            selectedOrdersByColor[pc.id]?.[a.id] ??
+                                            a.display_order ??
+                                            999;
 
-                                            const orderB =
-                                              selectedOrdersByColor[pc.id]?.[b.id] ??
-                                              b.display_order ??
-                                              999;
+                                          const orderB =
+                                            selectedOrdersByColor[pc.id]?.[b.id] ??
+                                            b.display_order ??
+                                            999;
 
-                                            return orderA - orderB;
-                                          })
-                                          .map((img, idx) => {
+                                          return orderA - orderB;
+                                        })
+                                        .map((img, idx) => {
                                         const totalCount = colorImages.length;
                                         const currentOrder =
                                           selectedOrdersByColor[pc.id]?.[img.id] ??

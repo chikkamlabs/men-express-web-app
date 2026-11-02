@@ -270,3 +270,331 @@ export async function updateDistributor(
     return { data: null, error: new Error(errorMsg) };
   }
 }
+
+// -----------------------------------------------------------------------------
+// DISTRIBUTOR TRANSACTIONS (Supplier Ledger)
+// -----------------------------------------------------------------------------
+
+export type PaymentMethod = 'cash' | 'upi' | 'card' | 'other' | 'bill';
+export type DistributorTransType = 'add' | 'subtract';
+
+export interface DistributorTransaction {
+  id: string;
+  distributor_id: string;
+  trans_type: DistributorTransType;
+  type: PaymentMethod;
+  trans_id: string;
+  amount: number;
+  balance: number;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface CreateDistributorTransactionInput {
+  distributor_id: string; // Distributor UUID (distributors.id)
+  trans_type: DistributorTransType; // 'add' | 'subtract'
+  type: PaymentMethod;
+  trans_id: string;
+  amount: number;
+  notes?: string;
+}
+
+const TRANSACTIONS_CACHE_KEY = 'menexpress_distributor_transactions_cache';
+
+function getLocalTransactionsCache(): DistributorTransaction[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(TRANSACTIONS_CACHE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function setLocalTransactionsCache(items: DistributorTransaction[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(TRANSACTIONS_CACHE_KEY, JSON.stringify(items));
+  } catch {
+    // Ignore storage write errors
+  }
+}
+
+/**
+ * Auto-generate transaction ID: trans(5 random numbers)
+ * Example: trans_58392
+ */
+export function generateRandomTransactionId(): string {
+  const random5Digits = Math.floor(10000 + Math.random() * 90000);
+  return `trans_${random5Digits}`;
+}
+
+/**
+ * Fetch a single distributor by UUID or distributor_id string
+ */
+export async function getDistributorById(
+  idOrDistributorId: string
+): Promise<{ data: Distributor | null; error: Error | null }> {
+  try {
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      idOrDistributorId
+    );
+
+    let query = supabase.from('distributors').select('*');
+    if (isUUID) {
+      query = query.eq('id', idOrDistributorId);
+    } else {
+      query = query.eq('distributor_id', idOrDistributorId);
+    }
+
+    const { data, error } = await query.maybeSingle();
+
+    if (error || !data) {
+      const local = getLocalCache();
+      const found = local.find(
+        (d) => d.id === idOrDistributorId || d.distributor_id === idOrDistributorId
+      );
+      if (found) {
+        return { data: found, error: null };
+      }
+      return {
+        data: null,
+        error: error ? new Error(error.message) : new Error('Distributor not found'),
+      };
+    }
+
+    return { data: data as Distributor, error: null };
+  } catch (err: unknown) {
+    const local = getLocalCache();
+    const found = local.find(
+      (d) => d.id === idOrDistributorId || d.distributor_id === idOrDistributorId
+    );
+    if (found) {
+      return { data: found, error: null };
+    }
+    const errorMsg = err instanceof Error ? err.message : 'Failed to fetch distributor';
+    return { data: null, error: new Error(errorMsg) };
+  }
+}
+
+/**
+ * Fetch all distributor transactions for a given distributor
+ */
+export async function getDistributorTransactions(
+  distributorIdOrUuid: string
+): Promise<{ data: DistributorTransaction[]; error: Error | null }> {
+  try {
+    // First, resolve distributor UUID if distributor_id string was passed
+    let distUuid = distributorIdOrUuid;
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      distributorIdOrUuid
+    );
+
+    if (!isUUID) {
+      const { data: distData } = await supabase
+        .from('distributors')
+        .select('id')
+        .eq('distributor_id', distributorIdOrUuid)
+        .maybeSingle();
+      if (distData?.id) {
+        distUuid = distData.id;
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('distributor_transactions')
+      .select('*')
+      .eq('distributor_id', distUuid)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.warn('Supabase fetch distributor_transactions error:', error.message);
+      const local = getLocalTransactionsCache().filter(
+        (t) => t.distributor_id === distUuid || t.distributor_id === distributorIdOrUuid
+      );
+      return { data: local, error: new Error(error.message) };
+    }
+
+    if (data) {
+      // Merge into local cache
+      const local = getLocalTransactionsCache();
+      const otherTransactions = local.filter((t) => t.distributor_id !== distUuid);
+      setLocalTransactionsCache([...(data as DistributorTransaction[]), ...otherTransactions]);
+      return { data: data as DistributorTransaction[], error: null };
+    }
+
+    const local = getLocalTransactionsCache().filter(
+      (t) => t.distributor_id === distUuid || t.distributor_id === distributorIdOrUuid
+    );
+    return { data: local, error: null };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Unknown network error';
+    const local = getLocalTransactionsCache().filter(
+      (t) => t.distributor_id === distributorIdOrUuid
+    );
+    return { data: local, error: new Error(errorMsg) };
+  }
+}
+
+/**
+ * Insert into distributor_transactions and update distributors.balance
+ * If trans_type is 'subtract': distributors.balance = distributors.balance - amount
+ * If trans_type is 'add': distributors.balance = distributors.balance + amount
+ */
+export async function recordDistributorTransaction(
+  input: CreateDistributorTransactionInput
+): Promise<{
+  data: DistributorTransaction | null;
+  newBalance: number;
+  error: Error | null;
+}> {
+  const amount = Number(input.amount);
+  if (isNaN(amount) || amount <= 0) {
+    return {
+      data: null,
+      newBalance: 0,
+      error: new Error('Transaction amount must be greater than 0.'),
+    };
+  }
+
+  try {
+    // 1. Resolve distributor and fetch latest balance
+    let distUuid = input.distributor_id;
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      input.distributor_id
+    );
+
+    let currentBalance = 0;
+    let distRecord: any = null;
+
+    if (isUUID) {
+      const { data } = await supabase
+        .from('distributors')
+        .select('*')
+        .eq('id', input.distributor_id)
+        .maybeSingle();
+      distRecord = data;
+    } else {
+      const { data } = await supabase
+        .from('distributors')
+        .select('*')
+        .eq('distributor_id', input.distributor_id)
+        .maybeSingle();
+      distRecord = data;
+    }
+
+    if (distRecord) {
+      distUuid = distRecord.id;
+      currentBalance = Number(distRecord.balance || 0);
+    } else {
+      // Check local cache
+      const localDistributors = getLocalCache();
+      const found = localDistributors.find(
+        (d) => d.id === input.distributor_id || d.distributor_id === input.distributor_id
+      );
+      if (found) {
+        distUuid = found.id;
+        currentBalance = Number(found.balance || 0);
+      }
+    }
+
+    // 2. Calculate new balance
+    const newBalance =
+      input.trans_type === 'subtract' ? currentBalance - amount : currentBalance + amount;
+
+    const payload = {
+      distributor_id: distUuid,
+      trans_type: input.trans_type,
+      type: input.type,
+      trans_id: input.trans_id.trim(),
+      amount: amount,
+      balance: newBalance,
+      notes: input.notes?.trim() || null,
+      created_at: new Date().toISOString(),
+    };
+
+    // 3. Insert transaction
+    const { data: insertedTransaction, error: transError } = await supabase
+      .from('distributor_transactions')
+      .insert([payload])
+      .select()
+      .single();
+
+    if (transError) {
+      console.warn('Supabase insert transaction failed, saving fallback:', transError.message);
+    }
+
+    // 4. Update distributor balance in Supabase
+    const { error: balanceUpdateError } = await supabase
+      .from('distributors')
+      .update({
+        balance: newBalance,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', distUuid);
+
+    if (balanceUpdateError) {
+      console.warn('Supabase update distributor balance failed:', balanceUpdateError.message);
+    }
+
+    // 5. Update local caches
+    const finalTransaction: DistributorTransaction = (insertedTransaction as DistributorTransaction) || {
+      id:
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `mock-trans-${Date.now()}`,
+      ...payload,
+    };
+
+    const localTransactions = getLocalTransactionsCache();
+    setLocalTransactionsCache([finalTransaction, ...localTransactions]);
+
+    const localDistributors = getLocalCache();
+    const updatedDistributors = localDistributors.map((d) =>
+      d.id === distUuid || d.distributor_id === input.distributor_id
+        ? { ...d, balance: newBalance, updated_at: new Date().toISOString() }
+        : d
+    );
+    setLocalCache(updatedDistributors);
+
+    return {
+      data: finalTransaction,
+      newBalance,
+      error: null,
+    };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Failed to record transaction';
+    return {
+      data: null,
+      newBalance: 0,
+      error: new Error(errorMsg),
+    };
+  }
+}
+
+/**
+ * Specifically for Purchase completion:
+ * Insert into distributor_transactions with distributor_trans_type(add), type(bill),
+ * trans_id(purchase_id), amount(purchase amount), balance(distributors.balance + purchase amount),
+ * notes(purchase details) and update distributors.balance = distributors.balance + purchase amount.
+ */
+export async function recordPurchaseDistributorTransaction(input: {
+  distributor_id: string; // Distributor UUID or distributor_id code
+  purchase_id: string;
+  amount: number;
+  notes?: string;
+}): Promise<{
+  data: DistributorTransaction | null;
+  newBalance: number;
+  error: Error | null;
+}> {
+  return recordDistributorTransaction({
+    distributor_id: input.distributor_id,
+    trans_type: 'add',
+    type: 'bill',
+    trans_id: input.purchase_id,
+    amount: input.amount,
+    notes: input.notes || `Purchase Invoice: ${input.purchase_id}`,
+  });
+}
+

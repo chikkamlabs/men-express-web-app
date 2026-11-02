@@ -9,6 +9,9 @@ import AdminHeader from '@/components/admin/header';
 import AdminSidebar from '@/components/admin/sidebar';
 import AddStaffModal from '@/components/admin/addstaff';
 import OpenStaffModal from '@/components/admin/openstaff';
+import StaffAttendancesModal from '@/components/staffattendences';
+import StaffSalariesModal from '@/components/staffsalaries';
+import AddStaffAttendanceModal from '@/components/admin/addstaffattendance';
 import { Staff, getStaffs } from '@/lib/staffStore';
 
 export default function AdminStaffDashboardPage() {
@@ -25,6 +28,9 @@ export default function AdminStaffDashboardPage() {
   // Modals
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
+  const [attendanceAddStaff, setAttendanceAddStaff] = useState<Staff | null>(null);
+  const [attendanceViewStaff, setAttendanceViewStaff] = useState<Staff | null>(null);
+  const [salariesStaff, setSalariesStaff] = useState<Staff | null>(null);
 
   // Authentication check
   useEffect(() => {
@@ -291,15 +297,41 @@ export default function AdminStaffDashboardPage() {
                           })}
                         </td>
 
-                        {/* Open Button: Grey color, turns dark black on tap */}
+                        {/* Action Column: Add Attendance, Attendances, Salaries, Open */}
                         <td className="py-3 px-4 text-sm text-right whitespace-nowrap">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedStaff(staff)}
-                            className="ui-btn ui-btn-grey ui-btn-sm px-3 py-1 font-medium text-xs cursor-pointer inline-flex items-center gap-1.5"
-                          >
-                            <span>Open</span>
-                          </button>
+                          <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => setAttendanceAddStaff(staff)}
+                              className="ui-btn ui-btn-outline ui-btn-sm px-2.5 py-1 font-medium text-xs text-black border-zinc-300 hover:bg-zinc-100 cursor-pointer inline-flex items-center"
+                              title="Add daily attendance"
+                            >
+                              <span>Add Attendance</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setAttendanceViewStaff(staff)}
+                              className="ui-btn ui-btn-outline ui-btn-sm px-2.5 py-1 font-medium text-xs text-black border-zinc-300 hover:bg-zinc-100 cursor-pointer inline-flex items-center"
+                              title="View this month attendance"
+                            >
+                              <span>Attendances</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSalariesStaff(staff)}
+                              className="ui-btn ui-btn-outline ui-btn-sm px-2.5 py-1 font-medium text-xs text-black border-zinc-300 hover:bg-zinc-100 cursor-pointer inline-flex items-center"
+                              title="Manage salaries"
+                            >
+                              <span>Salaries</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedStaff(staff)}
+                              className="ui-btn ui-btn-grey ui-btn-sm px-3 py-1 font-medium text-xs cursor-pointer inline-flex items-center"
+                            >
+                              <span>Open</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -346,6 +378,41 @@ export default function AdminStaffDashboardPage() {
           staff={selectedStaff}
           onClose={() => setSelectedStaff(null)}
           onStaffUpdated={handleStaffUpdated}
+        />
+      )}
+
+      {/* Add Staff Attendance Modal */}
+      {attendanceAddStaff && (
+        <AddStaffAttendanceModal
+          isOpen={Boolean(attendanceAddStaff)}
+          staff={attendanceAddStaff}
+          onClose={() => setAttendanceAddStaff(null)}
+          onAttendanceAdded={() => {
+            // Optional: open the attendances view to see the updated record
+          }}
+        />
+      )}
+
+      {/* View Staff Attendances (This Month) Modal */}
+      {attendanceViewStaff && (
+        <StaffAttendancesModal
+          isOpen={Boolean(attendanceViewStaff)}
+          staff={attendanceViewStaff}
+          onClose={() => setAttendanceViewStaff(null)}
+          onOpenAddAttendance={() => {
+            const currentStaff = attendanceViewStaff;
+            setAttendanceViewStaff(null);
+            setAttendanceAddStaff(currentStaff);
+          }}
+        />
+      )}
+
+      {/* Staff Salaries Modal */}
+      {salariesStaff && (
+        <StaffSalariesModal
+          isOpen={Boolean(salariesStaff)}
+          staff={salariesStaff}
+          onClose={() => setSalariesStaff(null)}
         />
       )}
     </div>

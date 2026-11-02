@@ -28,10 +28,18 @@ export default function AddProductVariantModal({
 
   // Form states
   const [sizeId, setSizeId] = useState('');
-  const [mrp, setMrp] = useState('');
-  const [sp, setSp] = useState('');
-  const [pp, setPp] = useState('');
-  const [quantity, setQuantity] = useState('0');
+  // Per-color pricing and quantity
+const [colorPricing, setColorPricing] = useState<
+  Record<
+    string,
+    {
+      mrp: string;
+      sp: string;
+      pp: string;
+      quantity: string;
+    }
+  >
+>({});
   const [onlineAvailable, setOnlineAvailable] = useState(true);
   const [onLandingPage, setOnLandingPage] = useState(false);
 
@@ -105,6 +113,23 @@ export default function AddProductVariantModal({
     }));
   };
 
+  const handleColorPricingChange = (
+  colorId: string,
+  field: 'mrp' | 'sp' | 'pp' | 'quantity',
+  value: string
+) => {
+  setColorPricing((prev) => ({
+    ...prev,
+    [colorId]: {
+      mrp: prev[colorId]?.mrp || '',
+      sp: prev[colorId]?.sp || '',
+      pp: prev[colorId]?.pp || '',
+      quantity: prev[colorId]?.quantity ?? '0',
+      [field]: value,
+    },
+  }));
+};
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!sizeId) {
@@ -165,23 +190,69 @@ export default function AddProductVariantModal({
       }
     }
 
-    const mrpNum = parseFloat(mrp);
-    const spNum = parseFloat(sp);
-    const ppNum = parseFloat(pp);
-    const qtyNum = parseInt(quantity, 10);
+    // Validate pricing and quantity separately for every selected color
+const pricingByColor: Record<
+  string,
+  { mrp: number; sp: number; pp: number; quantity: number }
+> = {};
 
-    if (isNaN(mrpNum) || mrpNum < 0) {
-      setErrorMessage('Please enter a valid MRP (>= 0).');
-      return;
-    }
-    if (isNaN(spNum) || spNum < 0 || spNum > mrpNum) {
-      setErrorMessage('Selling price (SP) must be between 0 and MRP.');
-      return;
-    }
-    if (isNaN(ppNum) || ppNum < 0) {
-      setErrorMessage('Please enter a valid Purchase Price (PP >= 0).');
-      return;
-    }
+for (const colorId of selectedProductColorIds) {
+  const pricing = colorPricing[colorId];
+
+  const mrpNum = Number(pricing?.mrp);
+  const spNum = Number(pricing?.sp);
+  const ppNum = Number(pricing?.pp);
+  const qtyNum = Number(pricing?.quantity);
+
+  const colorName =
+    productColors.find((pc) => pc.id === colorId)?.color?.name || 'Color';
+
+  if (
+    !pricing?.mrp?.trim() ||
+    !Number.isFinite(mrpNum) ||
+    mrpNum < 0
+  ) {
+    setErrorMessage(`Enter a valid MRP for ${colorName}.`);
+    return;
+  }
+
+  if (
+    !pricing?.sp?.trim() ||
+    !Number.isFinite(spNum) ||
+    spNum < 0 ||
+    spNum > mrpNum
+  ) {
+    setErrorMessage(`SP for ${colorName} must be between 0 and its MRP.`);
+    return;
+  }
+
+  if (
+    !pricing?.pp?.trim() ||
+    !Number.isFinite(ppNum) ||
+    ppNum < 0
+  ) {
+    setErrorMessage(`Enter a valid PP for ${colorName}.`);
+    return;
+  }
+
+  if (
+    pricing?.quantity === undefined ||
+    pricing.quantity.trim() === '' ||
+    !Number.isInteger(qtyNum) ||
+    qtyNum < 0
+  ) {
+    setErrorMessage(`Enter a valid stock quantity for ${colorName}.`);
+    return;
+  }
+
+  pricingByColor[colorId] = {
+    mrp: mrpNum,
+    sp: spNum,
+    pp: ppNum,
+    quantity: qtyNum,
+  };
+}
+
 
     setLoading(true);
     setErrorMessage('');
@@ -196,6 +267,7 @@ export default function AddProductVariantModal({
       for (const colorId of selectedProductColorIds) {
         const chosenColor = productColors.find((pc) => pc.id === colorId);
         const thisBarcode = (colorBarcodes[colorId] || '').trim();
+        const thisPricing = pricingByColor[colorId];
 
         const { data, error } = await createProductVariant(
           {
@@ -203,10 +275,10 @@ export default function AddProductVariantModal({
             product_color_id: colorId,
             size_id: sizeId,
             barcode: thisBarcode,
-            mrp: mrpNum,
-            s_p: spNum,
-            p_p: ppNum,
-            quantity: isNaN(qtyNum) ? 0 : qtyNum,
+            mrp: thisPricing.mrp,
+            s_p: thisPricing.sp,
+            p_p: thisPricing.pp,
+            quantity: thisPricing.quantity,
             online_available: onlineAvailable,
             on_landing_page: onLandingPage,
             status: 'active',
@@ -315,71 +387,8 @@ export default function AddProductVariantModal({
             </div>
 
             {/* Pricing Grid: MRP, SP, PP */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="ui-form-group">
-                <label className="ui-form-label font-semibold text-xs text-zinc-700 uppercase tracking-wide">
-                  MRP <span className="text-red-600">*</span>
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  required
-                  value={mrp}
-                  onChange={(e) => setMrp(e.target.value)}
-                  placeholder="999.00"
-                  className="ui-input font-mono text-black border border-zinc-300 focus:border-black"
-                  disabled={loading}
-                />
-              </div>
+            
 
-              <div className="ui-form-group">
-                <label className="ui-form-label font-semibold text-xs text-zinc-700 uppercase tracking-wide">
-                  SP (Selling) <span className="text-red-600">*</span>
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  required
-                  value={sp}
-                  onChange={(e) => setSp(e.target.value)}
-                  placeholder="799.00"
-                  className="ui-input font-mono text-black border border-zinc-300 focus:border-black"
-                  disabled={loading}
-                />
-              </div>
-
-              <div className="ui-form-group">
-                <label className="ui-form-label font-semibold text-xs text-zinc-700 uppercase tracking-wide">
-                  PP (Purchase) <span className="text-red-600">*</span>
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  required
-                  value={pp}
-                  onChange={(e) => setPp(e.target.value)}
-                  placeholder="450.00"
-                  className="ui-input font-mono text-black border border-zinc-300 focus:border-black"
-                  disabled={loading}
-                />
-              </div>
-            </div>
-
-            {/* Quantity */}
-            <div className="ui-form-group">
-              <label className="ui-form-label font-semibold text-xs text-zinc-700 uppercase tracking-wide">
-                Initial Stock Quantity (per color)
-              </label>
-              <input
-                type="number"
-                min="0"
-                value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-                placeholder="0"
-                className="ui-input font-mono text-black border border-zinc-300 focus:border-black"
-                disabled={loading}
-              />
-            </div>
 
             {/* Toggles: Online Available & On Landing Page */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
@@ -528,34 +537,121 @@ export default function AddProductVariantModal({
                       const currentVal = colorBarcodes[colorId] || '';
 
                       return (
-                        <div
-                          key={colorId}
-                          className="p-2.5 bg-zinc-50 border border-zinc-200 rounded-lg flex flex-col sm:flex-row sm:items-center gap-2 justify-between"
-                        >
-                          <div className="flex items-center gap-2 min-w-[130px] flex-shrink-0">
-                            <span
-                              className="w-3.5 h-3.5 rounded-full border border-zinc-300 flex-shrink-0"
-                              style={{ backgroundColor: colorCode }}
-                              aria-hidden="true"
-                            />
-                            <span className="text-xs font-semibold text-black truncate">
-                              {colorName}
-                            </span>
-                          </div>
+  <div
+    key={colorId}
+    className="p-4 bg-zinc-50 border border-zinc-200 rounded-lg space-y-3"
+  >
+    {/* Color Header */}
+    <div className="flex items-center gap-2 border-b border-zinc-200 pb-2">
+      <span
+        className="w-4 h-4 rounded-full border border-zinc-300 flex-shrink-0"
+        style={{ backgroundColor: colorCode }}
+        aria-hidden="true"
+      />
+      <span className="text-sm font-bold text-black">
+        {colorName}
+      </span>
+    </div>
 
-                          <div className="flex-1 w-full">
-                            <input
-                              type="text"
-                              required
-                              value={currentVal}
-                              onChange={(e) => handleBarcodeChange(colorId, e.target.value)}
-                              placeholder={`Barcode for ${colorName} (e.g. 890123...)`}
-                              className="ui-input font-mono text-xs text-black border border-zinc-300 focus:border-black py-1.5 w-full bg-white"
-                              disabled={loading}
-                            />
-                          </div>
-                        </div>
-                      );
+    {/* Barcode */}
+    <div>
+      <label className="text-xs font-semibold text-zinc-700 block mb-1">
+        Barcode *
+      </label>
+      <input
+        type="text"
+        required
+        value={currentVal}
+        onChange={(e) =>
+          handleBarcodeChange(colorId, e.target.value)
+        }
+        placeholder={`Barcode for ${colorName}`}
+        className="ui-input font-mono text-xs text-black border border-zinc-300 focus:border-black w-full bg-white"
+        disabled={loading}
+      />
+    </div>
+
+    {/* Per Color Pricing */}
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div>
+        <label className="text-xs font-semibold text-zinc-700 block mb-1">
+          MRP (₹) *
+        </label>
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          required
+          value={colorPricing[colorId]?.mrp || ''}
+          onChange={(e) =>
+            handleColorPricingChange(colorId, 'mrp', e.target.value)
+          }
+          placeholder="999.00"
+          className="ui-input font-mono text-black text-xs border border-zinc-300 focus:border-black w-full bg-white"
+          disabled={loading}
+        />
+      </div>
+
+      <div>
+        <label className="text-xs font-semibold text-zinc-700 block mb-1">
+          SP (₹) *
+        </label>
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          required
+          value={colorPricing[colorId]?.sp || ''}
+          onChange={(e) =>
+            handleColorPricingChange(colorId, 'sp', e.target.value)
+          }
+          placeholder="799.00"
+          className="ui-input font-mono text-black text-xs border border-zinc-300 focus:border-black w-full bg-white"
+          disabled={loading}
+        />
+      </div>
+
+      <div>
+        <label className="text-xs font-semibold text-zinc-700 block mb-1">
+          PP (₹) *
+        </label>
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          required
+          value={colorPricing[colorId]?.pp || ''}
+          onChange={(e) =>
+            handleColorPricingChange(colorId, 'pp', e.target.value)
+          }
+          placeholder="450.00"
+          className="ui-input font-mono text-black text-xs border border-zinc-300 focus:border-black w-full bg-white"
+          disabled={loading}
+        />
+      </div>
+    </div>
+
+    {/* Per Color Quantity */}
+    <div>
+      <label className="text-xs font-semibold text-zinc-700 block mb-1">
+        Initial Stock Quantity *
+      </label>
+      <input
+        type="number"
+        min="0"
+        step="1"
+        required
+        value={colorPricing[colorId]?.quantity ?? '0'}
+        onChange={(e) =>
+          handleColorPricingChange(colorId, 'quantity', e.target.value)
+        }
+        placeholder="0"
+        className="ui-input font-mono text-black text-xs border border-zinc-300 focus:border-black w-full bg-white"
+        disabled={loading}
+      />
+    </div>
+  </div>
+);
                     })}
                   </div>
                 </div>
