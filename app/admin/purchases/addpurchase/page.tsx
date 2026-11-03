@@ -35,6 +35,9 @@ import {
   getPurchases,
   CreatePurchaseItemInput,
 } from '@/lib/purchasesStore';
+import AddProductModal from '@/components/admin/addproduct';
+import AddProductVariantModal from '@/components/admin/addproductvariant';
+import { ProductColor, getProductColors } from '@/lib/productcolorsStore';
 
 export default function AdminAddPurchasePage() {
   const router = useRouter();
@@ -69,6 +72,11 @@ export default function AdminAddPurchasePage() {
   const [productVariants, setProductVariants] = useState<ProductVariant[]>([]);
   const [variantsLoading, setVariantsLoading] = useState(false);
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
+
+  // Modals for adding product and variant on-the-fly
+  const [isAddProductModalOpen, setIsAddProductModalOpen] = useState(false);
+  const [isAddVariantModalOpen, setIsAddVariantModalOpen] = useState(false);
+  const [selectedProductColors, setSelectedProductColors] = useState<ProductColor[]>([]);
 
   // Item input fields
   const [itemMrp, setItemMrp] = useState<number | string>('');
@@ -153,7 +161,7 @@ export default function AdminAddPurchasePage() {
       // 3. Fetch products
       getProducts().then(({ data }) => {
         if (!ignore && data) {
-          setProducts(data.filter((p) => p.status));
+          setProducts(data);
         }
       });
     }
@@ -178,17 +186,113 @@ export default function AdminAddPurchasePage() {
       setProductVariants(activeVariants);
       setVariantsLoading(false);
     });
+
+    getProductColors(p.id).then(({ data }) => {
+      setSelectedProductColors(data || []);
+    });
   };
 
   const handleClearProduct = () => {
     setSelectedProduct(null);
     setProductQuery('');
     setProductVariants([]);
+    setSelectedProductColors([]);
     setSelectedVariant(null);
     setItemMrp('');
     setItemPp('');
     setItemQty('1');
     setItemError(null);
+  };
+
+  const handleProductCreated = (newProd: Product) => {
+    setProducts((prev) => [newProd, ...prev]);
+    handleSelectProduct(newProd);
+    setIsAddProductModalOpen(false);
+  };
+
+  const handleOpenAddVariantModal = () => {
+    if (!selectedProduct) return;
+    getProductColors(selectedProduct.id).then(({ data }) => {
+      setSelectedProductColors(data || []);
+      setIsAddVariantModalOpen(true);
+    });
+  };
+
+  const handleVariantCreatedFromModal = (created: ProductVariant | ProductVariant[]) => {
+    const createdList = Array.isArray(created) ? created : [created];
+    if (createdList.length === 0) return;
+
+    // Update productVariants state
+    setProductVariants((prev) => {
+      const existingIds = new Set(prev.map((v) => v.id));
+      const toAdd = createdList.filter((v) => !existingIds.has(v.id));
+      return [...prev, ...toAdd];
+    });
+
+    if (createdList.length === 1) {
+      const single = createdList[0];
+      // Auto select that product for purchase product_variant and fill mrp and other details to the purchase item
+      setSelectedVariant(single);
+      if (single.mrp !== undefined && single.mrp !== null) {
+        setItemMrp(single.mrp);
+      }
+      if (single.p_p !== undefined && single.p_p !== null) {
+        setItemPp(single.p_p);
+      }
+      if (
+        single.quantity !== undefined &&
+        single.quantity !== null &&
+        Number(single.quantity) > 0
+      ) {
+        setItemQty(single.quantity);
+      } else {
+        setItemQty('1');
+      }
+      setItemError(null);
+    } else {
+      // If they select multiple product_variants. create multiple rows in the purchase items as well.
+      const newPurchaseRows: CreatePurchaseItemInput[] = createdList.map((v) => ({
+        product_id: selectedProduct!.id,
+        product_variant_id: v.id,
+        mrp: Number(v.mrp) || 0,
+        p_p: Number(v.p_p) || 0,
+        qty: Number(v.quantity) > 0 ? Number(v.quantity) : 1,
+        product_name: selectedProduct!.name,
+        product_prod_id: selectedProduct!.prod_id,
+        variant_barcode: v.barcode,
+        variant_size: v.size_value,
+        variant_color: v.color_name,
+      }));
+
+      setItems((prev) => {
+        const updated = [...prev];
+        for (const newRow of newPurchaseRows) {
+          const idx = updated.findIndex(
+            (it) => it.product_variant_id === newRow.product_variant_id
+          );
+          if (idx !== -1) {
+            updated[idx] = {
+              ...updated[idx],
+              qty: updated[idx].qty + newRow.qty,
+              mrp: newRow.mrp,
+              p_p: newRow.p_p,
+            };
+          } else {
+            updated.push(newRow);
+          }
+        }
+        return updated;
+      });
+
+      // Clear the single item entry form
+      setSelectedVariant(null);
+      setItemMrp('');
+      setItemPp('');
+      setItemQty('1');
+      setItemError(null);
+    }
+
+    setIsAddVariantModalOpen(false);
   };
 
   // Handle selecting a variant: populates mrp and p_p directly
@@ -230,15 +334,21 @@ export default function AdminAddPurchasePage() {
 
   // Filtered Products for search
   const filteredProducts = useMemo(() => {
-    const q = productQuery.trim().toLowerCase();
-    if (!q) return products;
-    return products.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.prod_id.toLowerCase().includes(q) ||
-        (p.category_name && p.category_name.toLowerCase().includes(q))
-    );
-  }, [products, productQuery]);
+  // Only show active products in the purchase dropdown.
+  const activeProducts = products.filter((p) => p.status);
+
+  const q = productQuery.trim().toLowerCase();
+
+  if (!q) return activeProducts;
+
+  return activeProducts.filter(
+    (p) =>
+      p.name.toLowerCase().includes(q) ||
+      p.prod_id.toLowerCase().includes(q) ||
+      (p.category_name &&
+        p.category_name.toLowerCase().includes(q))
+  );
+}, [products, productQuery]);
 
   // Add Item to Purchase Items list
   const handleAddItem = (e: React.FormEvent) => {
@@ -667,9 +777,19 @@ export default function AdminAddPurchasePage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {/* Step 2a: Search and Select Product */}
                     <div className="relative">
-                      <label className="block text-[11px] font-medium text-zinc-600 mb-1">
-                        Select Product *
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[11px] font-medium text-zinc-600">
+                          Select Product *
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setIsAddProductModalOpen(true)}
+                          className="text-[11px] font-semibold text-black hover:underline inline-flex items-center gap-1 cursor-pointer"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Add new product</span>
+                        </button>
+                      </div>
                       {selectedProduct ? (
                         <div className="p-2 bg-white border border-zinc-300 rounded-md flex items-center justify-between">
                           <div className="truncate">
@@ -735,9 +855,21 @@ export default function AdminAddPurchasePage() {
 
                     {/* Step 2b: Ask Product Variant (for selected product_id) */}
                     <div>
-                      <label className="block text-[11px] font-medium text-zinc-600 mb-1">
-                        Select Variant (Size &amp; Color) *
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[11px] font-medium text-zinc-600">
+                          Select Variant (Size &amp; Color) *
+                        </label>
+                        {selectedProduct && (
+                          <button
+                            type="button"
+                            onClick={handleOpenAddVariantModal}
+                            className="text-[11px] font-semibold text-black hover:underline inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>Add new variant</span>
+                          </button>
+                        )}
+                      </div>
                       {!selectedProduct ? (
                         <div className="h-9 px-3 bg-zinc-100 border border-zinc-200 rounded-md text-xs text-zinc-400 flex items-center">
                           Choose a product first...
@@ -748,8 +880,15 @@ export default function AdminAddPurchasePage() {
                           <span>Loading variants...</span>
                         </div>
                       ) : productVariants.length === 0 ? (
-                        <div className="h-9 px-3 bg-yellow-50 border border-yellow-200 rounded-md text-xs text-yellow-800 flex items-center">
-                          No active variants created for this product yet.
+                        <div className="h-9 px-3 bg-yellow-50 border border-yellow-200 rounded-md text-xs text-yellow-800 flex items-center justify-between">
+                          <span>No active variants created for this product yet.</span>
+                          <button
+                            type="button"
+                            onClick={handleOpenAddVariantModal}
+                            className="font-bold underline text-black cursor-pointer text-xs ml-2 flex-shrink-0"
+                          >
+                            + Add new variant
+                          </button>
                         </div>
                       ) : (
                         <select
@@ -972,6 +1111,35 @@ export default function AdminAddPurchasePage() {
           </div>
         </main>
       </div>
+
+      {/* Add Product Modal */}
+      {isAddProductModalOpen && (
+        <AddProductModal
+          isOpen={isAddProductModalOpen}
+          onClose={() => setIsAddProductModalOpen(false)}
+          productsCount={products.length}
+          existingProducts={products}
+          onProductCreated={handleProductCreated}
+        />
+      )}
+
+      {/* Add Product Variant Modal */}
+      {isAddVariantModalOpen && selectedProduct && (
+        <AddProductVariantModal
+          isOpen={isAddVariantModalOpen}
+          onClose={() => setIsAddVariantModalOpen(false)}
+          productId={selectedProduct.id}
+          productColors={selectedProductColors}
+          existingVariants={productVariants}
+          onVariantCreated={handleVariantCreatedFromModal}
+          onProductColorCreated={(newPC) =>
+            setSelectedProductColors((prev) => {
+              if (prev.some((c) => c.id === newPC.id)) return prev;
+              return [...prev, newPC];
+            })
+          }
+        />
+      )}
     </div>
   );
 }

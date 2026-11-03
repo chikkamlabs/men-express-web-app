@@ -34,6 +34,9 @@ export default function OpenProductModal({
   const [landingPage, setLandingPage] = useState<boolean>(
     typeof product.landing_page === 'boolean' ? product.landing_page : false
   );
+  const [onlineAvailable, setOnlineAvailable] = useState<boolean>(
+    typeof product.online_available === 'boolean' ? product.online_available : false
+  );
 
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -109,6 +112,7 @@ export default function OpenProductModal({
           fabric: fabric.trim() || undefined,
           status,
           landing_page: landingPage,
+          online_available: onlineAvailable,
         },
         selectedCategory?.name
       );
@@ -344,6 +348,25 @@ export default function OpenProductModal({
               </select>
               <span className="ui-form-helper text-xs text-zinc-500 mt-1">
                 Display this product on the public landing page showcase
+              </span>
+            </div>
+
+            {/* Editable Online Available (true / false) */}
+            <div className="ui-form-group">
+              <label className="ui-form-label font-semibold text-xs text-zinc-700 uppercase tracking-wide">
+                Online Available
+              </label>
+              <select
+                value={onlineAvailable ? 'true' : 'false'}
+                onChange={(e) => setOnlineAvailable(e.target.value === 'true')}
+                className="ui-select text-black border border-zinc-300 focus:border-black"
+                disabled={loading}
+              >
+                <option value="false">No (False)</option>
+                <option value="true">Yes (True)</option>
+              </select>
+              <span className="ui-form-helper text-xs text-zinc-500 mt-1">
+                Make this product available for online store purchases
               </span>
             </div>
           </div>
