@@ -590,6 +590,12 @@ function ProductVariantsDashboardContent() {
           productColors={productColors}
           existingVariants={variants}
           onVariantCreated={handleVariantCreated}
+          onProductColorCreated={(newPC) =>
+            setProductColors((prev) => {
+              if (prev.some((c) => c.id === newPC.id)) return prev;
+              return [...prev, newPC];
+            })
+          }
         />
       )}
 

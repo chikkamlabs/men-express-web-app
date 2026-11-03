@@ -38,6 +38,8 @@ export default function AddProductModal({
   const [collar, setCollar] = useState('');
   const [fabric, setFabric] = useState('');
   const [status, setStatus] = useState<boolean>(true);
+  const [onlineAvailable, setOnlineAvailable] = useState<boolean>(false);
+  const [landingPage, setLandingPage] = useState<boolean>(false);
 
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -137,6 +139,8 @@ export default function AddProductModal({
           collar: collar.trim() || undefined,
           fabric: fabric.trim() || undefined,
           status,
+          online_available: onlineAvailable,
+          landing_page: landingPage,
         },
         selectedCategory?.name
       );
@@ -373,6 +377,40 @@ export default function AddProductModal({
               >
                 <option value="true">Active (True - default)</option>
                 <option value="false">Inactive (False)</option>
+              </select>
+            </div>
+
+            {/* Online Available (default False) */}
+            <div className="ui-form-group">
+              <label className="ui-form-label font-semibold text-xs text-zinc-700 uppercase tracking-wide">
+                Online Available (Default False)
+              </label>
+              <select
+                value={onlineAvailable ? 'true' : 'false'}
+                onChange={(e) => setOnlineAvailable(e.target.value === 'true')}
+                onKeyDown={handleKeyDown}
+                className="ui-select text-black border border-zinc-300 focus:border-black"
+                disabled={loading}
+              >
+                <option value="false">False (Default)</option>
+                <option value="true">True (Online Available)</option>
+              </select>
+            </div>
+
+            {/* Landing Page (default False) */}
+            <div className="ui-form-group">
+              <label className="ui-form-label font-semibold text-xs text-zinc-700 uppercase tracking-wide">
+                Landing Page (Default False)
+              </label>
+              <select
+                value={landingPage ? 'true' : 'false'}
+                onChange={(e) => setLandingPage(e.target.value === 'true')}
+                onKeyDown={handleKeyDown}
+                className="ui-select text-black border border-zinc-300 focus:border-black"
+                disabled={loading}
+              >
+                <option value="false">False (Default)</option>
+                <option value="true">True (On Landing Page)</option>
               </select>
             </div>
           </div>

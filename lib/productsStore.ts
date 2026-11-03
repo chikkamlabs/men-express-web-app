@@ -10,6 +10,7 @@ export interface Product {
   fabric: string | null;
   status: boolean;
   landing_page?: boolean;
+  online_available?: boolean;
   created_at: string;
   updated_at?: string;
   category_name?: string;
@@ -24,6 +25,7 @@ export interface CreateProductInput {
   fabric?: string;
   status?: boolean;
   landing_page?: boolean;
+  online_available?: boolean;
 }
 
 export interface UpdateProductInput {
@@ -34,6 +36,7 @@ export interface UpdateProductInput {
   fabric?: string;
   status: boolean;
   landing_page?: boolean;
+  online_available?: boolean;
 }
 
 const LOCAL_STORAGE_KEY = 'menexpress_products_cache';
@@ -110,6 +113,7 @@ export async function getProducts(): Promise<{
         fabric: row.fabric || null,
         status: typeof row.status === 'boolean' ? row.status : true,
         landing_page: typeof row.landing_page === 'boolean' ? row.landing_page : false,
+        online_available: typeof row.online_available === 'boolean' ? row.online_available : false,
         created_at: row.created_at,
         updated_at: row.updated_at,
         category_name: row.categories?.name || undefined,
@@ -165,6 +169,8 @@ export async function createProduct(
     collar: input.collar?.trim() || null,
     fabric: input.fabric?.trim() || null,
     status: typeof input.status === 'boolean' ? input.status : true,
+    online_available: typeof input.online_available === 'boolean' ? input.online_available : false,
+    landing_page: typeof input.landing_page === 'boolean' ? input.landing_page : false,
   };
 
   try {
@@ -189,6 +195,8 @@ export async function createProduct(
         collar: payload.collar,
         fabric: payload.fabric,
         status: payload.status,
+        online_available: payload.online_available,
+        landing_page: payload.landing_page,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         category_name: categoryName,
@@ -208,6 +216,8 @@ export async function createProduct(
       collar: row.collar,
       fabric: row.fabric,
       status: row.status,
+      online_available: typeof row.online_available === 'boolean' ? row.online_available : payload.online_available,
+      landing_page: typeof row.landing_page === 'boolean' ? row.landing_page : payload.landing_page,
       created_at: row.created_at,
       updated_at: row.updated_at,
       category_name: row.categories?.name || categoryName,
@@ -261,6 +271,7 @@ export async function updateProduct(
     fabric: input.fabric?.trim() || null,
     status: input.status,
     landing_page: typeof input.landing_page === 'boolean' ? input.landing_page : false,
+    online_available: typeof input.online_available === 'boolean' ? input.online_available : false,
     updated_at: new Date().toISOString(),
   };
 
@@ -299,6 +310,7 @@ export async function updateProduct(
       fabric: row.fabric,
       status: row.status,
       landing_page: typeof row.landing_page === 'boolean' ? row.landing_page : false,
+      online_available: typeof row.online_available === 'boolean' ? row.online_available : false,
       created_at: row.created_at,
       updated_at: row.updated_at,
       category_name: row.categories?.name || categoryName,
