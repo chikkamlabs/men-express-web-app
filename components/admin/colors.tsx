@@ -11,6 +11,33 @@ interface ColorsModalProps {
   onColorCreated: (newColor: ColorItem) => void;
 }
 
+const STANDARD_COLOR_PALETTE = [
+  { name: 'Black', code: '#000000' },
+  { name: 'White', code: '#FFFFFF' },
+  { name: 'Navy Blue', code: '#0A192F' },
+  { name: 'Royal Blue', code: '#2563EB' },
+  { name: 'Sky Blue', code: '#38BDF8' },
+  { name: 'Teal', code: '#0D9488' },
+  { name: 'Dark Green', code: '#14532D' },
+  { name: 'Olive Green', code: '#4D7C0F' },
+  { name: 'Sage Green', code: '#84A98C' },
+  { name: 'Khaki', code: '#C2B280' },
+  { name: 'Beige', code: '#F5F5DC' },
+  { name: 'Camel Tan', code: '#C19A6B' },
+  { name: 'Brown', code: '#78350F' },
+  { name: 'Maroon', code: '#881337' },
+  { name: 'Crimson Red', code: '#DC2626' },
+  { name: 'Orange', code: '#EA580C' },
+  { name: 'Mustard Yellow', code: '#D97706' },
+  { name: 'Peach', code: '#FDBA74' },
+  { name: 'Pink', code: '#EC4899' },
+  { name: 'Lavender', code: '#C084FC' },
+  { name: 'Purple', code: '#7E22CE' },
+  { name: 'Charcoal Grey', code: '#334155' },
+  { name: 'Heather Grey', code: '#64748B' },
+  { name: 'Light Grey', code: '#CBD5E1' },
+];
+
 export default function ColorsModal({
   isOpen,
   onClose,
@@ -22,6 +49,7 @@ export default function ColorsModal({
   const [code, setCode] = useState('#000000');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const nameInputRef = React.useRef<HTMLInputElement | null>(null);
 
   // Filtered colors by name or color code
   const filteredColors = useMemo(() => {
@@ -35,6 +63,16 @@ export default function ColorsModal({
   }, [colors, searchQuery]);
 
   if (!isOpen) return null;
+
+  const handleSelectPaletteColor = (paletteColor: { name: string; code: string }) => {
+    setCode(paletteColor.code.toUpperCase());
+    setName(paletteColor.name);
+    setErrorMessage('');
+    // Automatically focus the name input so the user can verify/edit the color name
+    setTimeout(() => {
+      nameInputRef.current?.focus();
+    }, 50);
+  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -117,10 +155,10 @@ export default function ColorsModal({
             />
           </div>
 
-          {/* Add Color Form (name and color code and Create button) */}
+          {/* Add Color Form (Standard Palette, name, color code, and Create button) */}
           <form
             onSubmit={handleCreate}
-            className="p-4 bg-zinc-50 border border-zinc-200 rounded-lg space-y-3"
+            className="p-4 bg-zinc-50 border border-zinc-200 rounded-lg space-y-3.5"
           >
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wider text-zinc-700">
@@ -134,13 +172,50 @@ export default function ColorsModal({
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+            {/* Standard Color Palette Box */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-semibold text-zinc-700">
+                  Standard Color Palette
+                </label>
+                <span className="text-[11px] text-zinc-500">
+                  Tap any color to select it &amp; its Hex code
+                </span>
+              </div>
+              <div className="grid grid-cols-6 sm:grid-cols-12 gap-1.5 p-2 bg-white border border-zinc-200 rounded-lg">
+                {STANDARD_COLOR_PALETTE.map((item) => {
+                  const isSelected = code.toUpperCase() === item.code.toUpperCase();
+                  return (
+                    <button
+                      key={item.code}
+                      type="button"
+                      onClick={() => handleSelectPaletteColor(item)}
+                      className={`group relative p-1 rounded-md border flex items-center justify-center transition-all cursor-pointer ${
+                        isSelected
+                          ? 'border-black ring-2 ring-black scale-105 shadow-xs'
+                          : 'border-zinc-200 hover:border-zinc-400 hover:scale-105'
+                      }`}
+                      title={`${item.name} (${item.code})`}
+                    >
+                      <span
+                        className="w-5 h-5 sm:w-6 sm:h-6 rounded border border-zinc-300 flex-shrink-0"
+                        style={{ backgroundColor: item.code }}
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Color Name, Color Code & Create Button */}
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end pt-1">
               {/* Name Input */}
               <div className="sm:col-span-5">
                 <label className="block text-xs font-medium text-zinc-700 mb-1">
                   Color Name <span className="text-red-600">*</span>
                 </label>
                 <input
+                  ref={nameInputRef}
                   type="text"
                   required
                   value={name}

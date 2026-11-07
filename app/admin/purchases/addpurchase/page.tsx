@@ -37,6 +37,8 @@ import {
 } from '@/lib/purchasesStore';
 import AddProductModal from '@/components/admin/addproduct';
 import AddProductVariantModal from '@/components/admin/addproductvariant';
+import AddDistributorModal from '@/components/admin/adddistributor';
+import AddTransactionsModal from '@/components/admin/addtransactions';
 import { ProductColor, getProductColors } from '@/lib/productcolorsStore';
 
 export default function AdminAddPurchasePage() {
@@ -62,6 +64,11 @@ export default function AdminAddPurchasePage() {
   const [selectedDistributor, setSelectedDistributor] = useState<Distributor | null>(null);
   const [distributorQuery, setDistributorQuery] = useState('');
   const [isDistributorDropdownOpen, setIsDistributorDropdownOpen] = useState(false);
+  const [isAddDistributorModalOpen, setIsAddDistributorModalOpen] = useState(false);
+
+  // Post-purchase Transaction Modal States
+  const [isAddTransactionModalOpen, setIsAddTransactionModalOpen] = useState(false);
+  const [transactionDistributor, setTransactionDistributor] = useState<Distributor | null>(null);
 
   // Product & Variant Selection States
   const [products, setProducts] = useState<Product[]>([]);
@@ -202,6 +209,14 @@ export default function AdminAddPurchasePage() {
     setItemPp('');
     setItemQty('1');
     setItemError(null);
+  };
+
+  const handleDistributorCreated = (newDist: Distributor) => {
+    setDistributors((prev) => [newDist, ...prev]);
+    setSelectedDistributor(newDist);
+    setDistributorQuery('');
+    setIsDistributorDropdownOpen(false);
+    setIsAddDistributorModalOpen(false);
   };
 
   const handleProductCreated = (newProd: Product) => {
@@ -483,7 +498,7 @@ export default function AdminAddPurchasePage() {
       ? `Purchase Invoice: ${invoiceNumber.trim()} • ${items.length} item(s)`
       : `Purchase: ${purchaseId.trim()} • ${items.length} item(s)`;
 
-    await recordPurchaseDistributorTransaction({
+    const { newBalance } = await recordPurchaseDistributorTransaction({
       distributor_id: selectedDistributor.id,
       purchase_id: purchaseId.trim(),
       amount: finalAmount,
@@ -492,8 +507,16 @@ export default function AdminAddPurchasePage() {
 
     setIsSubmitting(false);
 
-    // Successfully saved! Redirect to purchases list
-    router.push('/admin/purchases');
+    // After all the actions until now:
+    // Automatically open components/admin/addtransactions.tsx for that distributor to allow recording a debit transaction
+    setTransactionDistributor({
+      ...selectedDistributor,
+      balance:
+        typeof newBalance === 'number'
+          ? newBalance
+          : Number(selectedDistributor.balance || 0) + finalAmount,
+    });
+    setIsAddTransactionModalOpen(true);
   };
 
   if (authLoading) {
@@ -621,18 +644,28 @@ export default function AdminAddPurchasePage() {
                         <Building2 className="w-3.5 h-3.5 text-zinc-500" />
                         Distributor (Supplier) *
                       </span>
-                      {selectedDistributor && (
+                      <div className="flex items-center gap-3">
                         <button
                           type="button"
-                          onClick={() => {
-                            setSelectedDistributor(null);
-                            setDistributorQuery('');
-                          }}
-                          className="text-[11px] text-zinc-500 hover:text-black underline cursor-pointer"
+                          onClick={() => setIsAddDistributorModalOpen(true)}
+                          className="text-[11px] font-semibold text-black hover:underline inline-flex items-center gap-1 cursor-pointer"
                         >
-                          Change distributor
+                          <Plus className="w-3 h-3" />
+                          <span>Add new Distributor</span>
                         </button>
-                      )}
+                        {selectedDistributor && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedDistributor(null);
+                              setDistributorQuery('');
+                            }}
+                            className="text-[11px] text-zinc-500 hover:text-black underline cursor-pointer"
+                          >
+                            Change distributor
+                          </button>
+                        )}
+                      </div>
                     </label>
 
                     {selectedDistributor ? (
@@ -1138,6 +1171,33 @@ export default function AdminAddPurchasePage() {
               return [...prev, newPC];
             })
           }
+        />
+      )}
+
+      {/* Add Distributor Modal */}
+      {isAddDistributorModalOpen && (
+        <AddDistributorModal
+          isOpen={isAddDistributorModalOpen}
+          onClose={() => setIsAddDistributorModalOpen(false)}
+          distributorsCount={distributors.length}
+          existingDistributors={distributors}
+          onDistributorCreated={handleDistributorCreated}
+        />
+      )}
+
+      {/* Add Transaction Modal after Save Purchase */}
+      {isAddTransactionModalOpen && transactionDistributor && (
+        <AddTransactionsModal
+          isOpen={isAddTransactionModalOpen}
+          distributor={transactionDistributor}
+          onClose={() => {
+            setIsAddTransactionModalOpen(false);
+            router.push('/admin/purchases');
+          }}
+          onTransactionAdded={() => {
+            setIsAddTransactionModalOpen(false);
+            router.push('/admin/purchases');
+          }}
         />
       )}
     </div>

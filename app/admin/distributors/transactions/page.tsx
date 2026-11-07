@@ -29,6 +29,7 @@ import {
   getDistributorTransactions,
 } from '@/lib/distributorsStore';
 import AddTransactionsModal from '@/components/admin/addtransactions';
+import TransactionProofModal from '@/components/admin/transactionproff';
 
 function DistributorTransactionsContent() {
   const router = useRouter();
@@ -48,6 +49,7 @@ function DistributorTransactionsContent() {
   );
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [selectedProofTx, setSelectedProofTx] = useState<DistributorTransaction | null>(null);
 
   // Auth check
   useEffect(() => {
@@ -310,13 +312,14 @@ function DistributorTransactionsContent() {
                         <th className="py-3 px-4">Payment Type</th>
                         <th className="py-3 px-4">Amount</th>
                         <th className="py-3 px-4">Balance</th>
+                        <th className="py-3 px-4 text-center">Proof</th>
                         <th className="py-3 px-4">Notes</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-200 text-xs">
                       {transactions.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="py-12 text-center text-zinc-500">
+                          <td colSpan={7} className="py-12 text-center text-zinc-500">
                             <Receipt className="w-8 h-8 text-zinc-300 mx-auto mb-2" />
                             <p className="font-medium text-sm text-zinc-700">No transactions recorded yet.</p>
                             <p className="text-xs text-zinc-400 mt-1">
@@ -385,6 +388,22 @@ function DistributorTransactionsContent() {
                               })}
                             </td>
 
+                            {/* Proof Column: Just Show Receipt icon if tap open components/admin/transactionproff.tsx */}
+                            <td className="py-3 px-4 text-center whitespace-nowrap">
+                              {tx.proof_url ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedProofTx(tx)}
+                                  className="inline-flex items-center justify-center p-1.5 rounded-md text-zinc-700 hover:text-black hover:bg-zinc-100 border border-zinc-200 transition-colors cursor-pointer shadow-2xs group"
+                                  title="View Proof Image"
+                                >
+                                  <Receipt className="w-4 h-4 text-zinc-600 group-hover:text-black" />
+                                </button>
+                              ) : (
+                                <span className="text-zinc-300 font-mono text-xs">—</span>
+                              )}
+                            </td>
+
                             {/* Notes */}
                             <td className="py-3 px-4 text-zinc-600 max-w-xs truncate">
                               {tx.notes || <span className="text-zinc-400 italic">No notes</span>}
@@ -408,6 +427,15 @@ function DistributorTransactionsContent() {
           onClose={() => setIsAddModalOpen(false)}
           distributor={distributor}
           onTransactionAdded={handleTransactionAdded}
+        />
+      )}
+
+      {/* Proof Image Modal */}
+      {selectedProofTx && (
+        <TransactionProofModal
+          isOpen={Boolean(selectedProofTx)}
+          onClose={() => setSelectedProofTx(null)}
+          transaction={selectedProofTx}
         />
       )}
     </div>
