@@ -314,15 +314,24 @@ export default function AdminStoresDashboardPage() {
                           {store.mobile || '—'}
                         </td>
 
-                        {/* Open Button */}
+                        {/* Action Buttons: Store stock & Open */}
                         <td className="py-3 px-4 text-sm text-right whitespace-nowrap">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedStore(store)}
-                            className="ui-btn ui-btn-grey ui-btn-sm px-3 py-1 font-medium text-xs cursor-pointer inline-flex items-center gap-1.5"
-                          >
-                            <span>Open</span>
-                          </button>
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => router.push(`/admin/stores/stock?store_id=${store.id}`)}
+                              className="ui-btn ui-btn-outline ui-btn-sm px-3 py-1 font-medium text-xs cursor-pointer inline-flex items-center gap-1.5 border-zinc-300 hover:bg-zinc-100 text-black"
+                            >
+                              <span>Store stock</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedStore(store)}
+                              className="ui-btn ui-btn-grey ui-btn-sm px-3 py-1 font-medium text-xs cursor-pointer inline-flex items-center gap-1.5"
+                            >
+                              <span>Open</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))

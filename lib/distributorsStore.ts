@@ -287,6 +287,7 @@ export interface DistributorTransaction {
   amount: number;
   balance: number;
   notes: string | null;
+  proof_url?: string | null;
   created_at: string;
 }
 
@@ -297,6 +298,7 @@ export interface CreateDistributorTransactionInput {
   trans_id: string;
   amount: number;
   notes?: string;
+  proof_url?: string | null;
 }
 
 const TRANSACTIONS_CACHE_KEY = 'menexpress_distributor_transactions_cache';
@@ -510,6 +512,7 @@ export async function recordDistributorTransaction(
       amount: amount,
       balance: newBalance,
       notes: input.notes?.trim() || null,
+      proof_url: input.proof_url?.trim() || null,
       created_at: new Date().toISOString(),
     };
 
@@ -596,5 +599,41 @@ export async function recordPurchaseDistributorTransaction(input: {
     amount: input.amount,
     notes: input.notes || `Purchase Invoice: ${input.purchase_id}`,
   });
+}
+
+/**
+ * Upload payment transaction proof image to Supabase storage bucket 'payment_trans_proofs'
+ * and return public URL or file path.
+ */
+export async function uploadPaymentProofImage(
+  file: File,
+  transId?: string
+): Promise<{ publicUrl: string | null; error: Error | null }> {
+  try {
+    const fileExt = file.name.split('.').pop() || 'jpg';
+    const cleanFileName = `proof_${transId || 'trans'}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+    const storagePath = `${cleanFileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('payment_trans_proofs')
+      .upload(storagePath, file, {
+        cacheControl: '3600',
+        upsert: true,
+      });
+
+    if (uploadError) {
+      console.warn('Upload to payment_trans_proofs failed:', uploadError.message);
+      return { publicUrl: null, error: new Error(uploadError.message) };
+    }
+
+    const { data: urlData } = supabase.storage
+      .from('payment_trans_proofs')
+      .getPublicUrl(storagePath);
+
+    return { publicUrl: urlData?.publicUrl || storagePath, error: null };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Upload failed';
+    return { publicUrl: null, error: new Error(errorMsg) };
+  }
 }
 

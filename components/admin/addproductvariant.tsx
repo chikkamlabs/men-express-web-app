@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { X, Loader2, Plus, AlertCircle, Check, Palette } from 'lucide-react';
 import { SizeItem, getSizes, ColorItem, getColors, createColor } from '@/lib/settingsStore';
 import { ProductColor, addProductColor, getProductColors } from '@/lib/productcolorsStore';
@@ -137,7 +137,23 @@ export default function AddProductVariantModal({
     return masterColors.filter((mc) => !assignedColorIds.has(mc.id));
   }, [masterColors, currentProductColors]);
 
-  if (!isOpen) return null;
+  // Helper: check if a color is already added for this size
+  const isColorAlreadyAssignedForSize = useCallback(
+    (colorId: string, targetSizeId: string) => {
+      if (!targetSizeId) return false;
+      return existingVariants.some(
+        (v) => v.product_color_id === colorId && v.size_id === targetSizeId
+      );
+    },
+    [existingVariants]
+  );
+
+  // Colors to configure: Don't ask barcode, mrp, etc. if that color and size already exists!
+  const colorsToConfigure = useMemo(() => {
+    return selectedProductColorIds.filter(
+      (colorId) => !isColorAlreadyAssignedForSize(colorId, sizeId)
+    );
+  }, [selectedProductColorIds, sizeId, isColorAlreadyAssignedForSize]);
 
   // Toggle single color in multi-selection
   const handleToggleColor = (colorId: string) => {
@@ -148,14 +164,6 @@ export default function AddProductVariantModal({
         return [...prev, colorId];
       }
     });
-  };
-
-  // Helper: check if a color is already added for this size
-  const isColorAlreadyAssignedForSize = (colorId: string, targetSizeId: string) => {
-    if (!targetSizeId) return false;
-    return existingVariants.some(
-      (v) => v.product_color_id === colorId && v.size_id === targetSizeId
-    );
   };
 
   // Select all available colors that are not already assigned for the selected size
@@ -310,55 +318,59 @@ export default function AddProductVariantModal({
       return;
     }
 
-    // 1. Prevent duplicate (color, size) violations (database constraint: uq_product_variant_color_size)
-    const existingDuplicates: string[] = [];
-    for (const colorId of selectedProductColorIds) {
-      if (isColorAlreadyAssignedForSize(colorId, sizeId)) {
-        const pc = currentProductColors.find((c) => c.id === colorId);
-        existingDuplicates.push(pc?.color?.name || 'Color');
-      }
-    }
+    // Only process colors that do not already exist for this size
+    const activeColors = selectedProductColorIds.filter(
+      (colorId) => !isColorAlreadyAssignedForSize(colorId, sizeId)
+    );
 
-    if (existingDuplicates.length > 0) {
+    if (activeColors.length === 0) {
       const chosenSizeObj = sizes.find((s) => s.id === sizeId);
       setErrorMessage(
-        `Variant already exists for size "${chosenSizeObj?.value || 'selected'}" in color(s): ${existingDuplicates.join(', ')}. Please unselect these color(s) or select a different size.`
+        `Variant already exists for size "${chosenSizeObj?.value || 'selected'}" in all selected colors. Please select a different size or unassigned color.`
       );
       return;
     }
 
-    // 2. Check that every selected color has a non-empty barcode
-    for (const colorId of selectedProductColorIds) {
+    // Barcode handling: If entered, check duplicate. If not entered, auto-generate (6 digit numbers).
+    const existingBarcodesSet = new Set(
+      existingVariants.map((v) => v.barcode.trim().toLowerCase())
+    );
+
+    // Check duplicate among entered barcodes
+    const enteredOnly = activeColors
+      .map((id) => (colorBarcodes[id] || '').trim())
+      .filter(Boolean);
+    const uniqueEntered = new Set(enteredOnly.map((c) => c.toLowerCase()));
+    if (uniqueEntered.size !== enteredOnly.length) {
+      setErrorMessage('Entered barcodes must be unique for each color variant.');
+      return;
+    }
+
+    // Assign or auto-generate 6-digit barcodes
+    const barcodesByColor: Record<string, string> = {};
+    for (const colorId of activeColors) {
       const code = (colorBarcodes[colorId] || '').trim();
-      if (!code) {
-        const cObj = currentProductColors.find((pc) => pc.id === colorId);
-        setErrorMessage(`Please enter a barcode for ${cObj?.color?.name || 'the selected color'}.`);
-        return;
+      if (code) {
+        if (existingBarcodesSet.has(code.toLowerCase())) {
+          setErrorMessage(
+            `Barcode "${code}" is already in use by another variant. Each variant must have a unique barcode.`
+          );
+          return;
+        }
+        barcodesByColor[colorId] = code;
+        existingBarcodesSet.add(code.toLowerCase());
+      } else {
+        // Auto-generate 6-digit number
+        let generated = '';
+        do {
+          generated = Math.floor(100000 + Math.random() * 900000).toString();
+        } while (existingBarcodesSet.has(generated.toLowerCase()));
+        barcodesByColor[colorId] = generated;
+        existingBarcodesSet.add(generated.toLowerCase());
       }
     }
 
-    // 3. Check duplicate barcodes among selected colors
-    const enteredCodes = selectedProductColorIds.map((id) => (colorBarcodes[id] || '').trim());
-    const uniqueCodes = new Set(enteredCodes);
-    if (uniqueCodes.size !== enteredCodes.length) {
-      setErrorMessage('Barcodes must be unique for each color variant.');
-      return;
-    }
-
-    // 4. Check if any entered barcode already exists in current variants
-    for (const code of enteredCodes) {
-      const existingMatch = existingVariants.find(
-        (v) => v.barcode.trim().toLowerCase() === code.toLowerCase()
-      );
-      if (existingMatch) {
-        setErrorMessage(
-          `Barcode "${code}" is already in use by another variant. Each variant must have a unique barcode.`
-        );
-        return;
-      }
-    }
-
-    // Validate pricing and quantity separately for every selected color
+    // Validate pricing and quantity separately for every active color
     const pricingByColor: Record<
       string,
       {
@@ -371,7 +383,7 @@ export default function AddProductVariantModal({
       }
     > = {};
 
-    for (const colorId of selectedProductColorIds) {
+    for (const colorId of activeColors) {
       const pricing = colorPricing[colorId];
 
       const mrpNum = Number(pricing?.mrp);
@@ -436,9 +448,9 @@ export default function AddProductVariantModal({
       const errorList: string[] = [];
 
       // Sequentially insert each selected color into product_variants table in Supabase
-      for (const colorId of selectedProductColorIds) {
+      for (const colorId of activeColors) {
         const chosenColor = currentProductColors.find((pc) => pc.id === colorId);
-        const thisBarcode = (colorBarcodes[colorId] || '').trim();
+        const thisBarcode = barcodesByColor[colorId];
         const thisPricing = pricingByColor[colorId];
 
         const { data, error } = await createProductVariant(
@@ -496,6 +508,8 @@ export default function AddProductVariantModal({
       setLoading(false);
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="ui-dialog-backdrop p-4" role="dialog" aria-modal="true">
@@ -826,61 +840,75 @@ export default function AddProductVariantModal({
               {/* Barcode and Pricing input for selected color(s) */}
               {selectedProductColorIds.length > 0 && (
                 <div className="mt-4 pt-3 border-t border-zinc-200 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className="ui-form-label font-semibold text-xs text-zinc-700 uppercase tracking-wide">
-                      {selectedProductColorIds.length > 1
-                        ? `Barcodes & Pricing for Selected Colors (${selectedProductColorIds.length})`
-                        : 'Barcode & Pricing for Selected Color'}{' '}
-                      <span className="text-red-600">*</span>
-                    </label>
-                  </div>
-                  <p className="text-2xs text-zinc-500">
-                    {selectedProductColorIds.length > 1
-                      ? 'Please enter the specific barcode and pricing for each selected color variant:'
-                      : 'Enter the barcode and pricing for this variant:'}
-                  </p>
+                  {colorsToConfigure.length === 0 ? (
+                    <div className="p-3 bg-zinc-50 border border-zinc-200 rounded-lg text-xs text-zinc-600">
+                      Variant(s) already exist for all selected color(s) in this size. Barcode and pricing are not required again. Choose another size or add another color above.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <label className="ui-form-label font-semibold text-xs text-zinc-700 uppercase tracking-wide">
+                          {colorsToConfigure.length > 1
+                            ? `Barcodes & Pricing for Colors to Add (${colorsToConfigure.length})`
+                            : 'Barcode & Pricing for Color to Add'}{' '}
+                          <span className="text-red-600">*</span>
+                        </label>
+                      </div>
+                      <p className="text-2xs text-zinc-500">
+                        {colorsToConfigure.length > 1
+                          ? 'Enter custom barcode or leave empty to auto-generate 6 digits. Enter MRP, SP, PP, and stock for each color:'
+                          : 'Enter custom barcode or leave empty to auto-generate 6 digits. Enter MRP, SP, PP, and stock:'}
+                      </p>
 
-                  <div className="space-y-2.5">
-                    {selectedProductColorIds.map((colorId) => {
-                      const pc = currentProductColors.find((c) => c.id === colorId);
-                      const colorName = pc?.color?.name || 'Selected Color';
-                      const colorCode = pc?.color?.code || '#000000';
-                      const currentVal = colorBarcodes[colorId] || '';
+                      <div className="space-y-2.5">
+                        {colorsToConfigure.map((colorId) => {
+                          const pc = currentProductColors.find((c) => c.id === colorId);
+                          const colorName = pc?.color?.name || 'Selected Color';
+                          const colorCode = pc?.color?.code || '#000000';
+                          const currentVal = colorBarcodes[colorId] || '';
 
-                      return (
-                        <div
-                          key={colorId}
-                          className="p-4 bg-zinc-50 border border-zinc-200 rounded-lg space-y-3"
-                        >
-                          {/* Color Header */}
-                          <div className="flex items-center gap-2 border-b border-zinc-200 pb-2">
-                            <span
-                              className="w-4 h-4 rounded-full border border-zinc-300 flex-shrink-0"
-                              style={{ backgroundColor: colorCode }}
-                              aria-hidden="true"
-                            />
-                            <span className="text-sm font-bold text-black">
-                              {colorName}
-                            </span>
-                          </div>
+                          return (
+                            <div
+                              key={colorId}
+                              className="p-4 bg-zinc-50 border border-zinc-200 rounded-lg space-y-3"
+                            >
+                              {/* Color Header */}
+                              <div className="flex items-center gap-2 border-b border-zinc-200 pb-2">
+                                <span
+                                  className="w-4 h-4 rounded-full border border-zinc-300 flex-shrink-0"
+                                  style={{ backgroundColor: colorCode }}
+                                  aria-hidden="true"
+                                />
+                                <span className="text-sm font-bold text-black">
+                                  {colorName}
+                                </span>
+                              </div>
 
-                          {/* Barcode */}
-                          <div>
-                            <label className="text-xs font-semibold text-zinc-700 block mb-1">
-                              Barcode *
-                            </label>
-                            <input
-                              type="text"
-                              required
-                              value={currentVal}
-                              onChange={(e) =>
-                                handleBarcodeChange(colorId, e.target.value)
-                              }
-                              placeholder={`Barcode for ${colorName}`}
-                              className="ui-input font-mono text-xs text-black border border-zinc-300 focus:border-black w-full bg-white"
-                              disabled={loading}
-                            />
-                          </div>
+                              {/* Barcode: Auto-generate 6 digits if left empty */}
+                              <div>
+                                <div className="flex items-center justify-between mb-1">
+                                  <label className="text-xs font-semibold text-zinc-700">
+                                    Barcode
+                                  </label>
+                                  <span className="text-[11px] font-mono text-zinc-500">
+                                    {currentVal.trim() ? (
+                                      <span className="text-emerald-700 font-semibold">Custom</span>
+                                    ) : (
+                                      <span className="text-zinc-400">Auto-generates 6 digits</span>
+                                    )}
+                                  </span>
+                                </div>
+                                <input
+                                  type="text"
+                                  value={currentVal}
+                                  onChange={(e) =>
+                                    handleBarcodeChange(colorId, e.target.value)
+                                  }
+                                  placeholder={`Enter barcode or leave blank to auto-generate 6 digits`}
+                                  className="ui-input font-mono text-xs text-black border border-zinc-300 focus:border-black w-full bg-white"
+                                  disabled={loading}
+                                />
+                              </div>
 
                           {/* Per Color Pricing */}
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -998,53 +1026,55 @@ export default function AddProductVariantModal({
                       );
                     })}
                   </div>
-                </div>
+                </>
               )}
             </div>
-          </div>
+          )}
+        </div>
+      </div>
 
-          {/* Footer with grey button that turns dark black on tap */}
-          <div className="ui-dialog-footer flex items-center justify-between gap-3 px-6 py-4 bg-zinc-50 border-t border-zinc-200">
-            <div className="text-xs text-zinc-600 font-medium">
-              {selectedProductColorIds.length > 0 && (
+      {/* Footer with grey button that turns dark black on tap */}
+      <div className="ui-dialog-footer flex items-center justify-between gap-3 px-6 py-4 bg-zinc-50 border-t border-zinc-200">
+        <div className="text-xs text-zinc-600 font-medium">
+          {colorsToConfigure.length > 0 && (
+            <span>
+              Creating {colorsToConfigure.length} variant{colorsToConfigure.length > 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className="ui-btn ui-btn-outline ui-btn-md text-black border-zinc-300 hover:bg-zinc-100 cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={loading || currentProductColors.length === 0 || colorsToConfigure.length === 0}
+            className="ui-btn ui-btn-grey ui-btn-md font-medium cursor-pointer shadow-xs flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                Creating...
+              </>
+            ) : (
+              <>
+                <Plus className="w-4 h-4 text-white" />
                 <span>
-                  Creating {selectedProductColorIds.length} variant{selectedProductColorIds.length > 1 ? 's' : ''}
+                  {colorsToConfigure.length > 1
+                    ? `Create (${colorsToConfigure.length}) Variants`
+                    : 'Create Variant'}
                 </span>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={onClose}
-                disabled={loading}
-                className="ui-btn ui-btn-outline ui-btn-md text-black border-zinc-300 hover:bg-zinc-100 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={loading || currentProductColors.length === 0 || selectedProductColorIds.length === 0}
-                className="ui-btn ui-btn-grey ui-btn-md font-medium cursor-pointer shadow-xs flex items-center gap-1.5"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                    Creating...
-                  </>
-                ) : (
-                  <>
-                    <Plus className="w-4 h-4 text-white" />
-                    <span>
-                      {selectedProductColorIds.length > 1
-                        ? `Create (${selectedProductColorIds.length}) Variants`
-                        : 'Create Variant'}
-                    </span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </form>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </form>
       </div>
     </div>
   );
